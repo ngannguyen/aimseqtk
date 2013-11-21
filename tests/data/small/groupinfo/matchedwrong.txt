@@ -1,0 +1,4 @@
+matched=TRUE
+group1  s1.1,s1.2,s1.3
+group2  s2.1,s2.2
+group3  s3.1,s3.2,s3.3

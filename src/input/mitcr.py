@@ -19,7 +19,7 @@ def mitcr_columns():
             "CDR3 nucleotide quality", "Min quality", 
             "CDR3 amino acid sequence", "V alleles", "V segments", 
             "J alleles", "J segments", "D alleles", "D segments", 
-            "Last V nucleotide position ", "First D nucleotide position",
+            "Last V nucleotide position", "First D nucleotide position",
             "Last D nucleotide position", "First J nucleotide position", 
             "VD insertions", "DJ insertions", "Total insertions"]
     return cols
@@ -34,7 +34,7 @@ def mitcr_parseline(line, index2col):
     
     col2val = {}
     valid_cols = mitcr_columns()
-    for i, col in enumerate(index2col):
+    for i, col in index2col.iteritems():
         if col in valid_cols:
             col2val[col] = items[i]
 
@@ -45,7 +45,7 @@ def mitcr_parseline(line, index2col):
         if c not in col2val or not col2val[c]:
             return None
 
-    count = int(col2va['Read count'])
+    count = int(col2val['Read count'])
     freq = float(col2val['Percentage'])/100.0
     nuc = col2val['CDR3 nucleotide sequence']
     vgenes = col2val['V segments'].split(', ')
@@ -53,8 +53,9 @@ def mitcr_parseline(line, index2col):
 
     clone = Clone(count, freq, nuc, vgenes, jgenes, cdr3nuc=nuc)
 
+    clone.productive = True  # Assuming MiTCR only output productive clones
     if 'D segments' in col2val:
-        col2val.dgenes = col2val['D segments'].split(', ')
+        clone.dgenes = col2val['D segments'].split(', ')
     if 'V alleles' in col2val:
         clone.valleles = col2val['V alleles'].split(', ')
     if 'J alleles' in col2val:
@@ -64,6 +65,7 @@ def mitcr_parseline(line, index2col):
 
     if 'CDR3 amino acid sequence' in col2val:
         clone.aa = col2val['CDR3 amino acid sequence']
+        clone.cdr3aa = col2val['CDR3 amino acid sequence']
     if 'Last V nucleotide position' in col2val:
         clone.lastvpos = int(col2val['Last V nucleotide position'])
     if 'First D nucleotide position' in col2val:

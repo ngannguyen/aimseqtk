@@ -24,7 +24,7 @@ def adaptive_columns():
     return cols
 
 def adaptive_parseline(line, index2col):
-    items = line.strip().split('\t')
+    items = line.strip('\n').split('\t')
     if len(items) != len(index2col):
         sys.stderr.write("Incosistent number of columns between the following\
                           line and the header line, skipped it:\n\
@@ -33,7 +33,7 @@ def adaptive_parseline(line, index2col):
     
     col2val = {}
     valid_cols = adaptive_columns()
-    for i, col in enumerate(index2col):
+    for i, col in index2col.iteritems():
         if col in valid_cols:
             col2val[col] = items[i]
 
@@ -41,7 +41,7 @@ def adaptive_parseline(line, index2col):
     required_cols = ['normalizedCopy', 'normalizedFrequency', 'nucleotide',
                      'VGeneName', 'JGeneName']
     for c in required_cols:
-        if c not in col2val or col2val[c] in ["(undefined)", ""]:
+        if c not in col2val:  # or col2val[c] in ["(undefined)", ""]:
             return None
 
     count = int(col2val['normalizedCopy'])
@@ -56,12 +56,15 @@ def adaptive_parseline(line, index2col):
     # Additional information if available
     # Gene info:
     if 'DGeneName' in col2val:
-        if clone.dgenes[0] != '(undefined)':
-            clone.dgenes = [col2val['DGeneName']]
+        dgenestr = col2val['DGeneName']
+        if dgenestr != '(undefined)':
+            clone.dgenes = [dgenestr]
     if 'VTies' in col2val:
-        clone.vgenes = col2val['VTies'].split(", ")
+        if col2val['VTies'] not in ['', '(undefined)']:
+            clone.vgenes = col2val['VTies'].split(", ")
     if 'JTies' in col2val:
-        clone.jgenes = col2val['JTies'].split(", ")
+        if col2val['JTies'] not in ['', '(undefined)']:
+            clone.jgenes = col2val['JTies'].split(", ")
 
     # Sequence ID, status and cdr3aa:
     if 'sequenceID' in col2val:
@@ -79,10 +82,6 @@ def adaptive_parseline(line, index2col):
     offset = 0
     if 'VIndex' in col2val:
         vindex = int(col2val['VIndex'])
-        if clone.cdr3aa:
-            cdr3len = clone.cdr3aa * 3
-            endindex = max(len(clone.nuc), vindex + cdr3len)
-            clone.cdr3nuc = clone.nuc[vindex: endindex]
         if clone.productive:
             # Make sure nuc is inframe:
             offset = vindex % 3
@@ -90,8 +89,12 @@ def adaptive_parseline(line, index2col):
             endoffset = (nuclen - offset) % 3
             clone.nuc = clone.nuc[offset:  nuclen - endoffset]
             clone.aa = libcommon.nt2aa(clone.nuc)
+        if clone.cdr3aa:
+            cdr3len = len(clone.cdr3aa) * 3
+            endindex = max(len(clone.nuc), vindex + cdr3len)
+            clone.cdr3nuc = clone.nuc[vindex: endindex]
     if 'DIndex' in col2val:
-        clone.firstdpos = int(col2va['DIndex']) - offset
+        clone.firstdpos = int(col2val['DIndex']) - offset
     if 'n2Index' in col2val:
         n2index = int(col2val['n2Index'])
         if n2index != -1:
@@ -101,9 +104,9 @@ def adaptive_parseline(line, index2col):
     if 'JIndex' in col2val:
         clone.firstjpos = int(col2val['JIndex']) - offset
     if 'n1Index' in col2val:
-        n1index = int(col2val['n1index'])
+        n1index = int(col2val['n1Index'])
         if n1index != -1:
-            clone.lastdpos = int(col2val['n1Index']) - 1 - offset
+            clone.lastdpos = n1index - 1 - offset
         elif clone.firstjpos:  # No d3ins
             clone.lastdpos = clone.firstjpos - 1
 
