@@ -8,6 +8,10 @@ Object represents a TCR repertoire sample
 
 import random
 import copy
+import gzip
+import cpickle as pickle
+
+from jobTree.scriptTree.target import Target
 
 
 class Sample():
@@ -52,7 +56,8 @@ class Sample():
                 clone.freq = float(clone.count)/self.size
 
 #======= RELEVANT FUNCTIONS =======
-def filter_by_size(sample, minsize, maxsize=-1, freq=False, freqadjust=False):
+def filter_by_size(sample, mincount=-1, maxcount=-1, minfreq=-1, maxfreq=-1,
+                   freqadjust=False):
     # Remove clones that have count (freq) < minsize 
     # or count (freq) > maxsize if maxsize is specified (!= -1)
     # if freqadjust=True, recompute clones' frequencies in the filtered
@@ -60,17 +65,57 @@ def filter_by_size(sample, minsize, maxsize=-1, freq=False, freqadjust=False):
     newsample = Sample(sample.name, group=sample.group)
     newclones = []
     for clone in sample.clones:
-        newclone = copy.copy(clone)
-        size = newclone.count
-        if freq:
-            size = newclone.freq
-        if size >= minsize:
-            if maxsize == -1 or size <= maxsize:
+        newclone = copy.deepcopy(clone)
+        if newclone.count >= mincount and newclone.freq >= minfreq:
+            if ((maxcount == -1 or newclone.count <= maxcount) and
+                (maxfreq == -1 or newclone.freq <= maxfreq)):
                 newclones.append(newclone)
     newsample.setclones(newclones)
     if freqadjust:
         newsample.resetfreq()
     return newsample
+
+def filter_by_status(sample, productive=True, resetfreq=True):
+    newsample = Sample(sample.name, group=sample.group)
+    newclones = []
+    for clone in sample.clones:
+        if productive == clone.productive:
+            newclones.append(copy.deepcopy(clone))
+    newsample.setclones(newclones)
+    if resetfreq:
+        newsample.resetfreq()
+    return newsample
+
+class FilterBySize(Target):
+    def __init__(self, outfile, sample, mincount=-1, maxcount=-1,
+                 minfreq=-1, maxfreq=-1, freqadjust=False):
+        Target.__init__(self)
+        self.outfile = outfile
+        self.sample = sample
+        self.mincount = mincount
+        self.maxcount = maxcount
+        self.minfreq = minfreq
+        self.maxfreq = maxfreq
+        self.freqadjust = freqadjust
+
+    def run(self):
+        sample = filter_by_size(self.sample, self.mincount, self.maxcount, 
+                       self.minfreq, self.maxfreq, self.freqadjust)
+        pickle.dump(sample, gzip.open(self.outfile, "wb")) 
+        
+class FilterByStatus(Target):
+    def __init__(self, outfile, sample, resetfreq=True):
+        Target.__init__(self)
+        self.outfile = outfile
+        self.sample = sample
+        self.resetfreq = resetfreq
+
+    def run(self):
+        productive_sample = filter_by_status(self.sample, True, self.resetfreq)
+        nonproductive_sample = filter_by_status(self.sample, False, 
+                                                self.resetfreq)
+        pickle.dump((productive_sample, nonproductive_sample), 
+                    gzip.open(self.outfile, "wb"))
 
 #======= SAMPLING =============
 '''
@@ -101,7 +146,7 @@ def sampling(sample, size):
     
     newclones = []
     for i, count in index2count.iteritems():
-        newclone = copy.copy(sample.clones[i])
+        newclone = copy.deepcopy(sample.clones[i])
         newclone.count = count
         newclone.freq = float(count)/size
         newclones.append(newclone)

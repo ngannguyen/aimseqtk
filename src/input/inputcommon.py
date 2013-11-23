@@ -8,6 +8,12 @@ Common functions
 
 import os
 import sys
+import gzip
+import cPickle as pickle
+from optparse import OptionGroup
+
+from jobTree.scriptTree.target import Target
+from sonLib.bioio import system
 
 import aimseqtk.lib.common as libcommon
 import aimseqtk.lib.sample as libsample
@@ -21,7 +27,6 @@ class FormatError(Exception):
 
 class UnrecognizedFormatError(Exception):
     pass
-
 
 def read_clone_file(file, parsefunc=mitcr.mitcr_parseline):
     samplename = os.path.splitext(os.path.basename(file))[0]
@@ -65,16 +70,16 @@ def read_clone_files(indir, parsefunc=mitcr.mitcr_parseline, ext=None):
 def process_clone_inputs(indir, format="mitcr", ext=None):
     # format has to be one of the following values: mitcr, adaptive, sequenta
     # return name2sample (key = sample.name, val = Sample())
-    if format == "mitcr":
-        return read_clone_files(indir, ext=ext)
-    elif format == "adaptive":
-        return read_clone_files(indir, adaptive.adaptive_parseline, ext)
-    elif format == "sequenta":
-        return read_clone_files(indir, sequenta.sequenta_parseline, ext)
-    else:
-        types = ["mitcr", "sequenta", "adaptive"]
+    format2func = {"mitcr": mitcr.mitcr_parseline,
+                   "adaptive": adaptive.adaptive_parseline,
+                   "sequenta": sequenta.sequenta_parseline}
+    if format not in format2func:
+        types = ",".join(format2func.keys())
         raise UnrecognizedFormatError("Format %s is not recognized. Please \
-                    choose one of these: %s\n" % (format, ",".join(types)))
+                    choose one of these: %s\n" % (format, types))
+    else:
+        func = format2func[format]
+        return read_clone_files(indir, func, ext)
     return None
 
 def read_group_info(file):
@@ -136,13 +141,87 @@ def read_group_info(file):
 
     f.close()
 
-    return group2samples
+    return group2samples, matched
 
+def add_filter_options(parser):
+    group = OptionGroup(parser, "Repertoire filtering options")
+    group.add_option('--mincount', dest='mincount', type='int', default=1,
+                      help=('Minimum read count. Clones with smaller counts '
+                            + 'will be filtered out. Default=%default'))
+    group.add_option('--maxcount', dest='maxcount', type='int', default=-1,
+                      help=('Maximum read count. Clones with larger counts '
+                            + 'will be filtered out. Default=%default (None).')
+                    )
+    group.add_option('--minfreq', dest='minfreq', type='float', default=0.0,
+                      help=('Minimum read freq. Clones with smaller freqs '
+                            + 'will be filtered out. Default=%default'))
+    group.add_option('--maxfreq', dest='maxfreq', type='float', default=-1.0,
+                      help=('Maximum read freq. Clones with larger freqs '
+                            + 'will be filtered out. Default=%default (None).')
+                    )
+    parser.add_option_group(group)
 
+#============= Parallelizing =========
+class ReadCloneFile(Target):
+    def __init__(self, outfile, infile, parsefunc):
+        Target.__init__(self)
+        self.outfile = outfile
+        self.infile = infile
+        self.parsefunc = parsefunc
 
+    def run(self):
+        sample = read_clone_file(self.infile, self.parsefunc)
+        pickle.dump(sample, gzip.open(self.outfile, "wb"))
 
+class ReadCloneAgg(Target):
+    def __init__(self, outfile, sampledir):
+        Target.__init__(self)
+        self.outfile = outfile
+        self.sampledir = sampledir
 
+    def run(self):
+        name2sample = {}
+        for file in os.listdir(self.sampledir):
+            samplefile = os.path.join(self.sampledir, file)
+            sample = pickle.load(gzip.open(samplefile, "rb"))
+            if sample.name in name2sample:
+                sys.stderr.write("Warning: Repetitive sample %s\n" % sample.name)
+                name2sample[sample.name].addclones(sample.clones)
+            else:
+                name2sample[sample.name] = sample
+        pickle.dump(name2sample, gzip.open(self.outfile, "wb"))
+        
+class ReadCloneFiles(Target):
+    def __init__(self, outfile, indir, format="mitcr", ext=None):
+        Target.__init__(self)
+        self.outfile = outfile
+        self.indir = indir
+        self.format = format
+        self.ext = ext
 
+    def run(self):
+        format2parsefunc = {"mitcr": mitcr.mitcr_parseline,
+                            "adaptive": adaptive.adaptive_parseline,
+                            "sequenta": sequenta.sequenta_parseline}
+        if self.format not in format2parsefunc:
+            raise UnrecognizedFormatError("Format %s is not recognized. Please\
+                    choose one of these: %s\n" % 
+                    (self.format, ",".join(format2parsefunc.keys())))
 
+        parsefunc = format2parsefunc[self.format]
+        global_tempdir = self.getGlobalTempDir()
+        sampledir = os.path.join(global_tempdir, "samples")
+        system("mkdir %s" % sampledir)
+
+        for file in os.listdir(self.indir):
+            # Check for the correct file extension if ext is specified
+            if ext is not None:
+                basename, extension = os.path.splitext(file)
+                if not extension.endswith(ext):
+                    continue
+            infile = os.path.join(self.indir, file)
+            outfile = os.path.join(sampledir, "%s.pickle" % file)
+            self.addChildTarget(ReadCloneFile(outfile, infile, parsefunc))
+        self.setFollowOnTarget(ReadCloneAgg(self.outfile, sampledir))
 
 

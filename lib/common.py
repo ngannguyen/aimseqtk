@@ -8,7 +8,27 @@ Common functions
 
 import os
 import sys
+from optparse import OptionParser
 
+
+class InputError(Exception):
+    pass
+
+def check_options_dir(dir):
+    if not os.path.exists(dir):
+        raise InputError("Directory %s does not exist." % dir)
+    if not os.path.isdir(dir):
+        raise InputError("%s is not a directory." % dir)
+
+def check_options_file(file):
+    if not os.path.exists(file):
+        raise InputError("File %s does not exists." % file)
+
+def init_options(usage=None):
+    if usage is None:
+        usage = "%prog [options]"
+    parser = OptionParser(usage = usage)
+    return parser
 
 def get_index2item(line):
     items = line.rstrip("\n").split("\t")

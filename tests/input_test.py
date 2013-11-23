@@ -313,21 +313,24 @@ class TestReadGroupInfoFile(unittest.TestCase):
                               inputcommon.read_group_info, filepath)
         
         nomatched = os.path.join(self.indir, "nomatched.txt")
-        group2samples = inputcommon.read_group_info(nomatched)
+        group2samples, is_matched = inputcommon.read_group_info(nomatched)
         g2s = {'group1': ['s1.1', 's1.2', 's1.3'], 'group2': ['s2.1'],
                'group3': ['s3.1', 's3.2', 's3.3', 's3.4']}
         self.assertTrue(group2samples, g2s)
+        self.assertTrue(not is_matched)
         
         matched = os.path.join(self.indir, "matchedcorrect.txt")
-        group2samples = inputcommon.read_group_info(matched)
+        group2samples, is_matched = inputcommon.read_group_info(matched)
         g2s = {'group1': ['s1.1', 's1.2', 's1.3'], 
                'group2': ['s2.1', 's2.2', 's2.3'],
                'group3': ['s3.1', 's3.2', 's3.3']}
         self.assertTrue(group2samples, g2s)
+        self.assertTrue(is_matched)
         
         rep = os.path.join(self.indir, "repetitivenames.txt")
-        group2samples = inputcommon.read_group_info(matched)
+        group2samples, is_matched = inputcommon.read_group_info(matched)
         self.assertTrue(group2samples, g2s)
+        self.assertTrue(is_matched)
         
 
 if __name__ == '__main__':

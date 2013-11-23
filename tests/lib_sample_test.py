@@ -46,7 +46,8 @@ class TestFilterBySize(unittest.TestCase):
         self.assertEqual(len(newsample.clones), 2)
         self.assertEqual(newsample.clones[0].freq, 2.0/4)
 
-        newsample = libsample.filter_by_size(self.sample, 0.2, 0.2, True)
+        newsample = libsample.filter_by_size(self.sample, minfreq=0.2,
+                                             maxfreq=0.2, True)
         self.assertEqual(len(newsample.clones), 2)
 
     def tearDown(self):
