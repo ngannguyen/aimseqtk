@@ -16,6 +16,7 @@ from jobTree.scriptTree.target import Target
 from sonLib.bioio import system
 
 import aimseqtk.lib.common as libcommon
+import aimseqtk.lib.drawcommon as drawcommon
 import aimseqtk.lib.sample as libsample
 import aimseqtk.src.input.mitcr as mitcr
 import aimseqtk.src.input.adaptive as adaptive
@@ -183,6 +184,64 @@ def set_sample_marker(name2sample, group2samples):
     elif len(markers) >= len(name2sample):
         for name, sample in name2sample.iteritems():
             sample.setmarker(markers[i])
+
+#============ OPTIONS ==============
+def check_input_options(parser, args, options):
+    if options.indir is None:
+        raise libcommon.InputError("Please specify input directory.")
+    libcommon.check_options_dir(options.indir)
+    if not os.path.exists(options.outdir):
+        system("mkdir -p %s" % options.outdir)
+    libcommon.check_options_dir(options.outdir)
+    if options.metainfo:
+        libcommon.check_options_file(options.metainfo)
+        group2samples, matched = incommon.read_group_info(options.metainfo)
+        options.group2samples = group2samples
+        options.matched = matched
+
+    my_analyses = ['diversity', 'similarity', 'clonesize', 'lendist', 
+                   'geneusage', 'aausage', 'trackclone', 'prelim']
+    analyses = options.analyses.split(',')
+    for a in analyses:
+        if a not in my_analyses:
+            raise libcommon.InputError("Unknown analysis %s." % a)
+    self.analyses = analyses
+    drawcommon.check_plot_options(parser, options)
+
+def add_input_options(parser):
+    group = OptionGroup(parser, "Input arguments")
+    group.add_option('-i', '--indir', dest='indir',
+                      help=('Input directory containing tab-separated clone '
+                            + 'files. Valid formats: MiTCR, Adaptive '
+                            + 'Biotechnologies and Sequenta. File names are '
+                            + 'used as sample names. (Required argument).'))
+    group.add_option('-f', '--format', dest='format', default='mitcr',
+                      help= 'Input format. Please choose one of the following:'
+                            + ' [mitcr,adaptive,sequenta]. Default=%default'))
+    group.add_option('--ext', dest='ext', 
+                     help='Input file extension. (Optional)')
+    group.add_option('-o', '--outdir', dest='outdir', default='.',
+                      help='Output directory. Default=%default')
+    group.add_option('-m', '--metadata', dest='metainfo',
+                      help=('File containing grouping information. Format:\n'
+                            + 'First line:\nmatched=[true/false].Followed by:'
+                            + '\n<Group>\\t<sample1,sample2,etc>. One line '
+                            + 'group. Note: if matched=true, each group must '
+                            + 'have the same number of samples and the order '
+                            + 'of the samples implied their matching.'))
+    group.add_option('-a', '--analyses', dest='analyses', default='prelim',
+                     help=('Types of analyses to perform. Default=%default. '
+                           + 'Valid options (comma-separated) are: prelim,'
+                           + 'diversity,similarity,clonesize,lendist,geneusage'
+                           + ',aausage,trackclone.'))
+    group.add_option('--normalize', dest='normalize', action='store_true',
+                     default=False, help=('If specified, perform Bioconduct\'s'
+                                          + ' metagenomeSeq CSS normalization.'
+                                          ))
+    group.add_option('--sampling', dest='sampling', type='int',
+                     help='Sampling size. Default is using all reads.')
+    parser.add_option_group(group)
+    drawcommon.add_plot_options(parser)
 
 def add_filter_options(parser):
     group = OptionGroup(parser, "Repertoire filtering options")

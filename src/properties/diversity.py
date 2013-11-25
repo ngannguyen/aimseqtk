@@ -17,6 +17,7 @@ from sonLib.bioio import system
 
 import aimseqtk.lib.sample as libsample
 import aimseqtk.lib.common as libcommon
+import aimseqtk.src.properties.rarefaction_plot as rfplot
 
 
 class SampleSamplingDiversity:
@@ -261,6 +262,55 @@ class SampleDiversityRarefaction(Target):
         self.setFollowOnTarget(AvrSamplingDiversity(self.outdir, self.indices,
                                                     self.avrdir))
 
+class DiversityRarefactionSummary(Target):
+    # Print summary tables and draw plots
+    def __init__(self, indir, name2sample, options):
+        Target.__init__(self)
+        self.indir = indir   # avrdir: avrdir/sample/size.pickle
+        self.name2sample = name2sample
+        self.options = options
+
+    def run(self):
+        indices = self.options.diversity
+        name2size2sampling = {}
+        size2name2sampling = {}
+        for name in os.listdir(self.indir):
+            sampledir = os.path.joindir(self.indir, name)
+            name2size2sampling[name] = {}
+            for file in os.listdir(sampledir):
+                size = long(file)
+                filepath = os.path.join(sampledir, file)
+                sampling = pickle.load(gzip.open(filepath, "rb"))
+                name2size2sampling[name][size] = sampling
+
+                if size not in size2name2sampling:
+                    size2name2sampling[size] = {name: sampling}
+                else:
+                    size2name2sampling[size][name] = sampling
+
+        outdir = os.path.join(self.options.outdir, "diversity")
+        system("mkdir -p %s" % outdir)
+        
+        # Summary table for each index:
+        groups = None
+        if self.options.group2samples:
+            groups = self.options.group2samples.keys()
+
+        for index in indices:
+            rftabfile = os.path.join(outdir, "rf_%s.txt" % index)
+            rf_diversity_table(name2size2sampling, rftabfile, index)
+            if self.options.drawplots:
+                rfplotfile = os.path.join(outdir, "rf_%s" % index)
+                rfplot.draw_rarefaction(name2size2sampling, self.name2sample,
+                                    groups, index, rfplotfile, 
+                                    self.options.plotformat, self.options.dpi)
+         # Summary table for each sampling size:
+         for size, name2sampling in size2name2sampling.iteritems():
+             txtfile = os.path.join(outdir, "diversity_%d.txt" % size)
+             diversity_text(name2sampling, txtfile, indices)
+             texfile = os.path.join(outdir, "diversity_%d.tex" % size)
+             diversity_latex(name2sampling, texfile, indices)
+
 class DiversityRarefaction(Target):
     # diversity_avr/sample/size.pickle
     def __init__(self, name2sample, options):
@@ -285,5 +335,6 @@ class DiversityRarefaction(Target):
             self.addChildTarget(SampleDiversityRarefaction(sampledir, sample,
                                     sizes, self.options.rf_num_sampling,
                                     self.options.diversity, avrsampledir))
-        #self.setFollowOnTarget()
+        self.setFollowOnTarget(DiversityRarefactionSummary(avrdir,
+                                   self.name2sample, self.options))
 

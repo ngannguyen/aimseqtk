@@ -8,6 +8,7 @@ Common functions for plotting using Matplotlib
 
 import os
 import sys
+from optparse import OptionGroup
 
 
 def get_colors_medium():
@@ -44,4 +45,149 @@ def getname2color(names):
         name2color[names[i]] = color
     return name2color
 
+#======== Matplotlib related functions =========
+def add_plot_options(parser):
+    group = OptionGroup(parser, "Plot options")
+    group.add_option('--makeplots', dest='makeplots', action='store_true',
+                     default=False, help=('If specified, will produce plots.'
+                     + ' Default=%default.'))
+    group.add_option('--plotformat', dest='plotformat', default='pdf',
+                     help=('Plot output format [pdf|png|eps|all]. ' +
+                           'Default=%default'))
+    group.add_option('--dpi', dest='dpi', default=300, type='int',
+                     help='Dots per inch. Default=%default')
+    parser.add_option_group(group)
+
+def check_plot_options(parser, options):
+    if options.dpi < 72:
+        parser.error('dpi must >= than screen res, 72. Got: %d' % options.dpi)
+    if options.plotformat not in ('pdf', 'png', 'eps', 'all'):
+        parser.error('Unrecognized plot format: %s.' % options.plotformat +
+                     ' Choose one from: pdf png eps all.')
+
+def init_image(width, height, outformat, outname, dpi):
+    """
+    init_image takes a width and height and returns
+    both a fig and pdf object.
+    """
+    import matplotlib.backends.backend_pdf as pltback
+    import matplotlib.pyplot as plt
+    pdf = None
+    if outformat == 'pdf' or outformat == 'all':
+        pdf = pltback.PdfPages(outname + '.pdf')
+    fig = plt.figure(figsize=(width, height), dpi=dpi, facecolor='w')
+    return (fig, pdf)
+
+def write_image(fig, pdf, outformat, outname, dpi):
+    if outformat == 'pdf':
+        fig.savefig(pdf, format='pdf')
+        pdf.close()
+    elif outformat == 'png':
+        fig.savefig(outname + '.png', format='png', dpi=dpi)
+    elif outformat == 'eps':
+        fig.savefig(outname + '.eps', format='eps')
+    elif outformat == 'all':
+        fig.savefig(pdf, format='pdf')
+        pdf.close()
+        fig.savefig(outname + '.png', format='png', dpi=dpi)
+        fig.savefig(outname + '.eps', format='eps')
+
+def set_axes(fig):                                                                     
+    # Set single axes
+    return fig.add_axes([0.12, 0.15, 0.85, 0.75])                                      
+
+def set_axes2(fig, numsam, samples_per_plot):
+    # Set multiple axes, depending on the number of samples_per_plot
+    # and total Samples
+    numaxes = numsam / samples_per_plot 
+    if numsam % samples_per_plot != 0:
+        numaxes += 1
+    
+    axes_list = []
+    axleft = 0.12
+    axright = 0.97
+    axwidth = axright - axleft
+    axbottom = 0.15
+    axtop = 0.93
+    axheight = axtop - axbottom
+    margin = 0.1
+
+    h = (axheight - (margin * (numaxes - 1)))/float(numaxes)
+
+    bottom = axtop - h
+    for i in xrange(numaxes):#add axes from top down
+        axes_list.append(fig.add_axes([axleft, bottom, axwidth, h]))
+        bottom = bottom - (margin + h)
+    return axes_list
+
+def set_axes3(fig, range1, range2):
+    axleft = 0.12
+    axright = 0.95
+    axwidth = axright - axleft
+    axbottom = 0.15
+    axtop = 0.95
+    axheight = axtop - axbottom
+    margin = 0.05
+
+    h1 = (axheight - margin)*(range1/(range1 + range2))
+    h2 = axheight - margin - h1
+
+    ax2 = fig.add_axes([axleft, axbottom, axwidth, h2])
+    ax = fig.add_axes([axleft, axbottom + h2 + margin, axwidth, h1])
+    return ax, ax2
+
+def draw_discontinue_sign(top_axes, bottom_axes, top, bottom):
+    d = 2
+    top_axes.plot((-0.6, -0.4), (top + d, top - d), color="k", clip_on=False)
+    bottom_axes.plot((-0.6,-0.4), (bottom +d, bottom -d), color="k",
+                     clip_on=False)
+
+def edit_spine2(top_axes, bottom_axes):
+    # Set spines for plot with discontinous sign
+    top_axes.spines['bottom'].set_visible(False)
+    top_axes.spines['top'].set_visible(False)
+    top_axes.spines['right'].set_visible(False)
+    top_axes.yaxis.set_ticks_position('left')
+    top_axes.xaxis.set_ticks_position('none')
+
+    bottom_axes.spines['top'].set_visible(False)
+    bottom_axes.spines['right'].set_visible(False)
+    bottom_axes.xaxis.tick_bottom()
+    bottom_axes.yaxis.set_ticks_position('left')
+
+def edit_spine(axes):                                                                 
+    for loc, spine in axes.spines.iteritems():                                          
+        if loc in ['left', 'bottom']:                                                 
+            spine.set_position(('outward', 10))                                       
+        elif loc in ['right', 'top']:                                                   
+            spine.set_color('none')                                                     
+        else:                                                                           
+            raise ValueError('Unknown spine location %s\n' % loc)                     
+                                                                                        
+def set_ticks(axes):                                                                   
+    axes.xaxis.set_ticks_position('bottom')                                           
+    axes.yaxis.set_ticks_position('left')                                             
+    minorLocator = LogLocator(base=10, subs = range(1, 10))                           
+    axes.xaxis.set_minor_locator(minorLocator)                                        
+                                                
+def bihist(y1, y2, axes, bins, orientation, color=None):
+    # Top hist
+    n1, bins1, patch1 = axes.hist(y1, bins=bins, orientation=orientation, 
+                                  color=color)
+    # Bottom hist
+    n2, bins2, patch2 = axes.hist(y2, bins=bins, orientation=orientation,
+                                  color=color)
+    #set ymax:
+    if orientation == 'vertical':
+        ymax = max([i.get_height() for i in patch1])
+        for i in patch2:
+            i.set_height(-i.get_height())
+        ymin = min([i.get_height() for i in patch2])
+    elif orientation == 'horizontal':
+        ymax = max([i.get_width() for i in patch1])
+        for i in patch2:
+            i.set_width(-i.get_width())
+        ymin = min([i.get_width() for i in patch2])
+    #axes.set_ylim(ymin*1.1, ymax*1.1)
+    return ymin, ymax
 
