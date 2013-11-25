@@ -5,14 +5,14 @@
 #Released under the MIT license, see LICENSE.txt
 
 '''
-Testing aimseqtk.src.clonesize
+Testing aimseqtk.src.properties
 '''
 
 import os
 import sys
 import unittest2 as unittest
 
-import aimseqtk.src.clonesize.repsize as repsize
+import aimseqtk.src.properties.repsize as repsize
 import aimseqtk.lib.clone as libclone
 import aimseqtk.lib.sample as libsample
 

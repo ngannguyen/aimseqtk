@@ -27,6 +27,8 @@ class Sample():
         self.size = 0  # total sequence (read) count
         self.size = sum([clone.count for clone in self.clones])
         self.numclone = len(self.clones)
+        self.color = (0, 0, 0)
+        self.marker = '.'
 
     def addclone(self, clone):
         if clone is not None:
@@ -40,6 +42,12 @@ class Sample():
 
     def setgroup(self, group):
         self.group = group
+
+    def setcolor(self, color):
+        self.color = color
+
+    def setmarker(self, marker):
+        self.marker = marker
 
     def setclones(self, clones):
         self.clones = []

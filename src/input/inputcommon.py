@@ -140,8 +140,49 @@ def read_group_info(file):
                               + "number of samples.\n")
 
     f.close()
-
     return group2samples, matched
+
+def set_sample_group(name2sample, group2samples):
+    name2group = {}
+    for group, names in group2samples.iteritems():
+        for name in names:
+            if name in name2group:
+                raise libcommon.InputError(("Sample %s belongs to multiple " %
+                         name + "groups: %s, %s" % (group, name2group[name]))) 
+            name2group[name] = group
+
+    for name, group in name2group.iteritems():
+        if name in name2sample:
+            sample = name2sample[name]
+            sample.setgroup(group)
+
+def set_sample_color(name2sample, group2samples):
+    if group2samples:
+        group2color = drawcommon.getname2color(group2samples.keys())
+        for group, names in group2samples.iteritems():
+            color = group2color[group]
+            for name in names:
+                sample = name2sample[name]
+                sample.setcolor(color)
+    else:
+        name2color = drawcommon.getname2color(name2sample.keys())
+        for name, sample in name2sample.iteritems():
+            color = name2color[name]
+            sample.setcolor(color)
+
+def set_sample_marker(name2sample, group2samples):
+    markers = drawcommon.get_markers()
+    if group2samples:
+        for group, names in group2samples.iteritems():
+            if len(markers) < len(names):
+                return
+        for group, names in group2samples.iteritems():
+            for i, name in enumerate(names):
+                sample = name2sample[name]
+                sample.setmarker(markers[i])
+    elif len(markers) >= len(name2sample):
+        for name, sample in name2sample.iteritems():
+            sample.setmarker(markers[i])
 
 def add_filter_options(parser):
     group = OptionGroup(parser, "Repertoire filtering options")
