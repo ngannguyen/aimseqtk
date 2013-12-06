@@ -47,7 +47,7 @@ class TestFilterBySize(unittest.TestCase):
         self.assertEqual(newsample.clones[0].freq, 2.0/4)
 
         newsample = libsample.filter_by_size(self.sample, minfreq=0.2,
-                                             maxfreq=0.2, True)
+                                             maxfreq=0.2, freqadjust=True)
         self.assertEqual(len(newsample.clones), 2)
 
     def tearDown(self):
@@ -112,7 +112,6 @@ class TestSampling(unittest.TestCase):
             self.assertTrue(c.jgenes == self.s2j[c.nuc])
             self.assertEqual(c.count, s2c[c.nuc])
             self.assertEqual(c.freq, s2f[c.nuc])
-
 
 if __name__ == '__main__':
     unittest.main()

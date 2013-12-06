@@ -8,16 +8,19 @@ Common functions
 
 import os
 import sys
+import time
 import gzip
 import cPickle as pickle
 from optparse import OptionGroup
 
 from jobTree.scriptTree.target import Target
 from sonLib.bioio import system
+from sonLib.bioio import logger
 
 import aimseqtk.lib.common as libcommon
 import aimseqtk.lib.drawcommon as drawcommon
 import aimseqtk.lib.sample as libsample
+import aimseqtk.lib.clone as libclone
 import aimseqtk.src.input.mitcr as mitcr
 import aimseqtk.src.input.adaptive as adaptive
 import aimseqtk.src.input.sequenta as sequenta
@@ -73,7 +76,8 @@ def process_clone_inputs(indir, format="mitcr", ext=None):
     # return name2sample (key = sample.name, val = Sample())
     format2func = {"mitcr": mitcr.mitcr_parseline,
                    "adaptive": adaptive.adaptive_parseline,
-                   "sequenta": sequenta.sequenta_parseline}
+                   "sequenta": sequenta.sequenta_parseline,
+                   "aimseqtk": libclone.clone_parseline}
     if format not in format2func:
         types = ",".join(format2func.keys())
         raise UnrecognizedFormatError("Format %s is not recognized. Please \
@@ -143,59 +147,23 @@ def read_group_info(file):
     f.close()
     return group2samples, matched
 
-def set_sample_group(name2sample, group2samples):
-    name2group = {}
-    for group, names in group2samples.iteritems():
-        for name in names:
-            if name in name2group:
-                raise libcommon.InputError(("Sample %s belongs to multiple " %
-                         name + "groups: %s, %s" % (group, name2group[name]))) 
-            name2group[name] = group
-
-    for name, group in name2group.iteritems():
-        if name in name2sample:
-            sample = name2sample[name]
-            sample.setgroup(group)
-
-def set_sample_color(name2sample, group2samples):
-    if group2samples:
-        group2color = drawcommon.getname2color(group2samples.keys())
-        for group, names in group2samples.iteritems():
-            color = group2color[group]
-            for name in names:
-                sample = name2sample[name]
-                sample.setcolor(color)
-    else:
-        name2color = drawcommon.getname2color(name2sample.keys())
-        for name, sample in name2sample.iteritems():
-            color = name2color[name]
-            sample.setcolor(color)
-
-def set_sample_marker(name2sample, group2samples):
-    markers = drawcommon.get_markers()
-    if group2samples:
-        for group, names in group2samples.iteritems():
-            if len(markers) < len(names):
-                return
-        for group, names in group2samples.iteritems():
-            for i, name in enumerate(names):
-                sample = name2sample[name]
-                sample.setmarker(markers[i])
-    elif len(markers) >= len(name2sample):
-        for name, sample in name2sample.iteritems():
-            sample.setmarker(markers[i])
-
 #============ OPTIONS ==============
-def check_input_options(parser, args, options):
+def check_input_options(parser, options):
     if options.indir is None:
         raise libcommon.InputError("Please specify input directory.")
     libcommon.check_options_dir(options.indir)
     if not os.path.exists(options.outdir):
         system("mkdir -p %s" % options.outdir)
     libcommon.check_options_dir(options.outdir)
+    
+    if not options.jobTree:
+        options.jobTree = os.path.join(options.outdir, "jobTree")
+    
+    options.group2samples = None
+    options.matched = None
     if options.metainfo:
         libcommon.check_options_file(options.metainfo)
-        group2samples, matched = incommon.read_group_info(options.metainfo)
+        group2samples, matched = read_group_info(options.metainfo)
         options.group2samples = group2samples
         options.matched = matched
 
@@ -205,7 +173,24 @@ def check_input_options(parser, args, options):
     for a in analyses:
         if a not in my_analyses:
             raise libcommon.InputError("Unknown analysis %s." % a)
-    self.analyses = analyses
+    options.analyses = analyses
+    if options.samout:
+        if options.samout not in ['txt', 'pickle', 'both']:
+            raise libcommon.InputError("Unknown sample out format %s." %
+                                        options.samout)
+        options.samout = [options.samout]
+        if options.samout == 'both':
+            options.samout = ['txt', 'pickle']
+        if 'prelim' in analyses and 'pickle' not in options.samout:
+            options.samout.append('pickle')
+        samoutdir = os.path.join(options.outdir, "samples")
+        for format in options.samout:  # e.g: outdir/samples/productive/pickle
+            dir1 = os.path.join(samoutdir, "productive", format)
+            system("mkdir -p %s" % dir1)
+            dir2 = os.path.join(samoutdir, "non_productive", format)
+            system("mkdir -p %s" % dir2)
+    if options.sampling:
+        options.sampling = long(options.sampling)
     drawcommon.check_plot_options(parser, options)
 
 def add_input_options(parser):
@@ -216,12 +201,18 @@ def add_input_options(parser):
                             + 'Biotechnologies and Sequenta. File names are '
                             + 'used as sample names. (Required argument).'))
     group.add_option('-f', '--format', dest='format', default='mitcr',
-                      help= 'Input format. Please choose one of the following:'
-                            + ' [mitcr,adaptive,sequenta]. Default=%default'))
+                      help=('Input format. Please choose one of the following:'
+                            + ' [mitcr,adaptive,sequenta,aimseqtk,pickle]. '
+                            + 'Default=%default'))
     group.add_option('--ext', dest='ext', 
                      help='Input file extension. (Optional)')
     group.add_option('-o', '--outdir', dest='outdir', default='.',
                       help='Output directory. Default=%default')
+    group.add_option('--sample_out_format', dest='samout', help=('Optional: ' +
+                     '[txt,pickle,both]. If specified, will print out ' +
+                     'processed (after size and status filtering) samples in' +
+                     'the chosen format to outdir/samples. Default: do not ' +
+                     'print out samples.'))
     group.add_option('-m', '--metadata', dest='metainfo',
                       help=('File containing grouping information. Format:\n'
                             + 'First line:\nmatched=[true/false].Followed by:'
@@ -238,7 +229,7 @@ def add_input_options(parser):
                      default=False, help=('If specified, perform Bioconduct\'s'
                                           + ' metagenomeSeq CSS normalization.'
                                           ))
-    group.add_option('--sampling', dest='sampling', type='int',
+    group.add_option('--sampling', dest='sampling', type='long',
                      help='Sampling size. Default is using all reads.')
     parser.add_option_group(group)
     drawcommon.add_plot_options(parser)
@@ -270,31 +261,40 @@ class ReadCloneFile(Target):
         self.parsefunc = parsefunc
 
     def run(self):
-        sample = read_clone_file(self.infile, self.parsefunc)
-        pickle.dump(sample, gzip.open(self.outfile, "wb"))
-
-class ReadCloneAgg(Target):
-    def __init__(self, outfile, sampledir):
-        Target.__init__(self)
-        self.outfile = outfile
-        self.sampledir = sampledir
-
-    def run(self):
-        name2sample = {}
-        for file in os.listdir(self.sampledir):
-            samplefile = os.path.join(self.sampledir, file)
-            sample = pickle.load(gzip.open(samplefile, "rb"))
-            if sample.name in name2sample:
-                sys.stderr.write("Warning: Repetitive sample %s\n" % sample.name)
-                name2sample[sample.name].addclones(sample.clones)
-            else:
-                name2sample[sample.name] = sample
-        pickle.dump(name2sample, gzip.open(self.outfile, "wb"))
+        starttime = time.time()
         
+        sample = read_clone_file(self.infile, self.parsefunc)
+        
+        pickle.dump(sample, gzip.open(self.outfile, "wb"))
+        mytime = time.time() - starttime
+        logger.debug("Done reading sample file %s in %.4f seconds." % 
+                      (self.infile, mytime))
+
+#class ReadCloneAgg(Target):
+#    def __init__(self, outfile, sampledir):
+#        Target.__init__(self)
+#        self.outfile = outfile
+#        self.sampledir = sampledir
+#
+#    def run(self):
+#        starttime = time.time()
+#        name2sample = {}
+#        for file in os.listdir(self.sampledir):
+#            samplefile = os.path.join(self.sampledir, file)
+#            sample = pickle.load(gzip.open(samplefile, "rb"))
+#            if sample.name in name2sample:
+#                sys.stderr.write("Warning: Repetitive sample %s\n" % sample.name)
+#                name2sample[sample.name].addclones(sample.clones)
+#            else:
+#                name2sample[sample.name] = sample
+#        pickle.dump(name2sample, gzip.open(self.outfile, "wb"))
+#        mytime = time.time() - starttime
+#        logger.debug("Done aggregate all samples, took %.4f seconds" % mytime)
+
 class ReadCloneFiles(Target):
-    def __init__(self, outfile, indir, format="mitcr", ext=None):
+    def __init__(self, outdir, indir, format="mitcr", ext=None):
         Target.__init__(self)
-        self.outfile = outfile
+        self.outdir = outdir
         self.indir = indir
         self.format = format
         self.ext = ext
@@ -309,19 +309,17 @@ class ReadCloneFiles(Target):
                     (self.format, ",".join(format2parsefunc.keys())))
 
         parsefunc = format2parsefunc[self.format]
-        global_tempdir = self.getGlobalTempDir()
-        sampledir = os.path.join(global_tempdir, "samples")
-        system("mkdir %s" % sampledir)
 
         for file in os.listdir(self.indir):
             # Check for the correct file extension if ext is specified
-            if ext is not None:
+            basename = file
+            if self.ext is not None:
                 basename, extension = os.path.splitext(file)
-                if not extension.endswith(ext):
+                if not extension.endswith(self.ext):
                     continue
             infile = os.path.join(self.indir, file)
-            outfile = os.path.join(sampledir, "%s.pickle" % file)
+            outfile = os.path.join(self.outdir, "%s.pickle" % basename)
             self.addChildTarget(ReadCloneFile(outfile, infile, parsefunc))
-        self.setFollowOnTarget(ReadCloneAgg(self.outfile, sampledir))
+        #self.setFollowOnTarget(ReadCloneAgg(self.outfile, self.outdir))
 
 

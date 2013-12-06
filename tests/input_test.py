@@ -333,6 +333,7 @@ class TestReadGroupInfoFile(unittest.TestCase):
         self.assertTrue(is_matched)
         
 
+
 if __name__ == '__main__':
     unittest.main()
 

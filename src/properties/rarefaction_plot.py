@@ -9,6 +9,8 @@ Draw rarefaction plots
 import os
 import sys
 
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as pyplot
 import matplotlib.ticker as ticker
 from matplotlib.font_manager import FontProperties
@@ -35,15 +37,16 @@ def draw_rarefaction(name2size2sampling, name2sample, groups, index, outfile,
             y = sampling[index]
             ydata.append(y)
             stdindex = "%s_std" % index
-            if stdindex in sampling:
+            if stdindex in sampling.getitems():
                 std = sampling[stdindex]
                 stddata.append(std)
 
         sample = name2sample[name]
         if stddata:
             axes.errorbar(xdata, ydata, yerr=stddata, color=sample.color,
-                          markeredgecolor=color, fmt='.')
-        line = axes.plot(xdata, ydata, color=sample.color, linestyle='-')
+                          markeredgecolor=sample.color, fmt='.')
+        line, = axes.plot(xdata, ydata, color=sample.color, mec=sample.color,
+                         marker=sample.marker, linestyle='-')
         if not groups:
             lines.append(line)
             linenames.append(sample.name)
@@ -54,6 +57,10 @@ def draw_rarefaction(name2size2sampling, name2sample, groups, index, outfile,
     
     axes.xaxis.grid(b=True, color='#3F3F3F', linestyle='-', linewidth=0.05)
     axes.yaxis.grid(b=True, color='#3F3F3F', linestyle='-', linewidth=0.05)
+    
+    legend = axes.legend(lines, linenames, numpoints=1, loc='best', ncol=1)
+    legend._drawFrame = False
+    
     drawcommon.edit_spine(axes)
     # Labeling:
     axes.set_title("%s Rarefaction Curve" % index.title(), size='xx-large', 
@@ -61,9 +68,6 @@ def draw_rarefaction(name2size2sampling, name2sample, groups, index, outfile,
     axes.set_xlabel("Sampling size (number of sequences)", size='x-large',
                    weight='bold')
     axes.set_ylabel(index.title(), size='x-large', weight='bold')
-    
-    legend = axes.legend(lines, linenames, numpoints=1, loc='best', ncol=1)
-    legend._drawFrame = False
     
     pyplot.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
     pyplot.ticklabel_format(style='sci', axis='y', scilimits=(0,0))

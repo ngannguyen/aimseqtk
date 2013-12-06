@@ -27,9 +27,9 @@ def mitcr_columns():
 def mitcr_parseline(line, index2col):
     items = line.strip().split('\t')
     if len(items) != len(index2col):
-        sys.stderr.write("Incosistent number of columns between the following\
+        sys.stderr.write("Inconsistent number of columns between the following\
                           line and the header line, skipped it:\n\
-                          Line:\n%s\n" %line)
+                          Line:\n%s\n" % line)
         return None
     
     col2val = {}

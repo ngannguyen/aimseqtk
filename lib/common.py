@@ -8,11 +8,109 @@ Common functions
 
 import os
 import sys
+import copy
+import numbers
+import cPickle as pickle
 from optparse import OptionParser
 
 
 class InputError(Exception):
     pass
+
+def sort_dict_by_value(mydict, keyfunc=None):
+    # Return a list of tuples
+    items = [(v, k) for k, v in dictionary.items()]
+    if keyfunc is None:
+        items = sorted(items, reverse=True)
+    else:
+        items = sorted(items, reverse=True, key=keyfunc)
+    return [(k, v) for v, k in items] 
+
+def sort_objs_by_group(name2obj, group2names, addgroup, group2avr,
+                                                        keyfunc=None):
+    # Sort the objs by group, within each group, sort by keyfunc if
+    # specified, else by default
+    sorted_items = []
+    for group in sorted(group2names.keys()):
+        gnames = group2names[group]
+        gname2obj = dict((n, name2obj[n]) for n in gnames)
+        gsorted_items = sort_dict_by_value(gname2obj, keyfunc=keyfunc)
+        sorted_items.extend(gsorted_items)
+        if addgroup:
+            assert group in group2avr
+            groupavr = group2avr[group]
+            sorted_items.append(groupavr)
+    return sorted_objs
+
+def get_group_avr(name2obj, group2names):
+    # for each group, return an ojb whose attributes are average of the
+    # group member objs attributes. Note: obj must have func "getitems",
+    # which return the obj attributes, defined
+    group2avr = {}
+    if not group2names:
+        return group2avr
+
+    for group, names in group2names.iteritems():
+        assert len(names) > 0
+        avrname = "%s_Avr" % group
+        avrobj = copy.copy(name2obj[names[0]]) 
+        # Reset the avrobj:
+        for attr in avrobj.getitems():
+            val = avrobj[attr]
+            if isinstance(val, numbers.Number):
+                avrobj.__setattr__(attr, 0)
+            elif attr == 'name':
+                avrobj.__setattr__(attr, avrname)
+            elif attr == 'group':
+                avrobj.__setattr__(attr, group)
+            elif not isinstance(val, str):
+                avrobj.__setattr__(attr, None)
+
+        # Update all the numeric attributes
+        for name in names:  # each member
+            assert name in name2obj
+            obj = name2obj[name]
+            for attr in obj.getitems():
+                val = obj[attr]
+                if isinstance(val, numbers.Number):
+                    newval = avrobj[attr] + val
+                    avrobj.__setattr__(attr, newval)
+        for attr in avrobj.getitems():
+            val = avrobj[attr]
+            if isinstance(val, numbers.Number):
+                avrval = val/len(names)
+                avrobj.__setattr__(attr, avrval)
+        group2avr[group] = (avrname, avrobj)
+    return group2avr
+
+def load_pickledir(pickledir):
+    objs = []
+    for file in os.listdir(pickledir):
+        filepath = os.path.join(pickledir, file)
+        obj = pickle.load(gzip.open(filepath, "rb"))
+        objs.append(obj)
+    return objs
+
+def get_val2keys(key2vals):
+    val2keys = {}
+    for key, vals in key2vals.iteritems():
+        for val in vals:
+            if val not in val2keys:
+                val2keys[val] = [key]
+            else:
+                val2keys[val].append(key)
+    return val2keys
+
+def get_val2key_1to1(key2vals):
+    # revert a dictionary, requires that 1 value corresponds to only 1 key
+    val2key = {}
+    for k, vals in key2vals.iteritems():
+        for v in vals:
+            if v in val2key:
+                raise InputError(("%s belongs to multiple groups: " % name
+                                  + "%s, %s" % (k, val2key[v]))) 
+            val2key[v] = k
+    return val2key
 
 def check_options_dir(dir):
     if not os.path.exists(dir):
@@ -113,7 +211,8 @@ def tab_header(f, colnames):
     f.write("\\scalebox{1.0}{%\n")
     f.write("\\begin{tabular}{c%s}\n" % ("|c" * (len(colnames) - 1)))
     f.write("\\hline\n")
-    f.write("%s \\\\\n" % (" & ".join(colnames)))
+    boldedcols = ["\\bf{%s}" % c for c in colnames]
+    f.write("%s \\\\\n" % (" & ".join(boldedcols)))
     f.write("\\hline\n")
 
 def write_doc_start(f):
