@@ -54,7 +54,6 @@ def read_clone_file(file, parsefunc=mitcr.mitcr_parseline):
 def read_clone_files(indir, parsefunc=mitcr.mitcr_parseline, ext=None):
     # "func" is the converting function, different input formats
     name2sample = {}
-    
     for file in os.listdir(indir):
         # Check for the correct file extension if ext is specified
         if ext is not None:
@@ -101,6 +100,7 @@ def read_group_info(file):
     # the ordering is not important
     f = open(file, 'r')
     group2samples = {}
+    groups = []
     
     firstline = f.readline()
     if firstline is None:
@@ -124,6 +124,8 @@ def read_group_info(file):
                               (line, len(items)))
         group = items[0]
         samples = items[1].split(',')
+        if not samples:
+            sys.stderr.write("Group %s has 0 sample.\n" % group)
         if group in group2samples:
             sys.stderr.write("Warning: group_info file %s has groups with the "
                              + "same name: %s -- merge them into 1 group.\n" % 
@@ -131,6 +133,7 @@ def read_group_info(file):
             group2samples[group].extend(samples)
         else:
             group2samples[group] = samples
+        groups.append(group)
 
     if len(group2samples) == 0:
         raise FormatError("Wrong group_info format: No group was specified.\n")
@@ -145,7 +148,7 @@ def read_group_info(file):
                               + "number of samples.\n")
 
     f.close()
-    return group2samples, matched
+    return groups, group2samples, matched
 
 #============ OPTIONS ==============
 def check_input_options(parser, options):
@@ -163,16 +166,21 @@ def check_input_options(parser, options):
     options.matched = None
     if options.metainfo:
         libcommon.check_options_file(options.metainfo)
-        group2samples, matched = read_group_info(options.metainfo)
+        groups, group2samples, matched = read_group_info(options.metainfo)
         options.group2samples = group2samples
         options.matched = matched
+        options.groups = groups
 
     my_analyses = ['diversity', 'similarity', 'clonesize', 'lendist', 
-                   'geneusage', 'aausage', 'trackclone', 'prelim']
+                   'geneusage', 'aausage', 'overlap', 'trackclone', 'prelim']
     analyses = options.analyses.split(',')
     for a in analyses:
         if a not in my_analyses:
             raise libcommon.InputError("Unknown analysis %s." % a)
+    if 'trackclone' in analyses and not options.matched:
+        raise libcommon.InputError(("Matched samples are required if " +
+                                    "'trackclone' analysis is specified. " +
+                                    "Please modify the metadata file."))
     options.analyses = analyses
     if options.samout:
         if options.samout not in ['txt', 'pickle', 'both']:
@@ -224,13 +232,14 @@ def add_input_options(parser):
                      help=('Types of analyses to perform. Default=%default. '
                            + 'Valid options (comma-separated) are: prelim,'
                            + 'diversity,similarity,clonesize,lendist,geneusage'
-                           + ',aausage,trackclone.'))
+                           + ',aausage,overlap,trackclone.'))
     group.add_option('--normalize', dest='normalize', action='store_true',
                      default=False, help=('If specified, perform Bioconduct\'s'
                                           + ' metagenomeSeq CSS normalization.'
                                           ))
     group.add_option('--sampling', dest='sampling', type='long',
                      help='Sampling size. Default is using all reads.')
+    group.add_option('--pval', dest='pval', default=0.05, help='pvalue cutoff')
     parser.add_option_group(group)
     drawcommon.add_plot_options(parser)
 
@@ -254,6 +263,8 @@ def add_filter_options(parser):
 
 #============= Parallelizing =========
 class ReadCloneFile(Target):
+    ''' Read input clone file, return a "sample" obj
+    '''
     def __init__(self, outfile, infile, parsefunc):
         Target.__init__(self)
         self.outfile = outfile
@@ -262,9 +273,7 @@ class ReadCloneFile(Target):
 
     def run(self):
         starttime = time.time()
-        
         sample = read_clone_file(self.infile, self.parsefunc)
-        
         pickle.dump(sample, gzip.open(self.outfile, "wb"))
         mytime = time.time() - starttime
         logger.debug("Done reading sample file %s in %.4f seconds." % 
@@ -292,6 +301,8 @@ class ReadCloneFile(Target):
 #        logger.debug("Done aggregate all samples, took %.4f seconds" % mytime)
 
 class ReadCloneFiles(Target):
+    '''Set up children jobs to read each input file
+    '''
     def __init__(self, outdir, indir, format="mitcr", ext=None):
         Target.__init__(self)
         self.outdir = outdir
@@ -302,7 +313,8 @@ class ReadCloneFiles(Target):
     def run(self):
         format2parsefunc = {"mitcr": mitcr.mitcr_parseline,
                             "adaptive": adaptive.adaptive_parseline,
-                            "sequenta": sequenta.sequenta_parseline}
+                            "sequenta": sequenta.sequenta_parseline,
+                            "aimseqtk": libclone.clone_parseline}
         if self.format not in format2parsefunc:
             raise UnrecognizedFormatError("Format %s is not recognized. Please\
                     choose one of these: %s\n" % 

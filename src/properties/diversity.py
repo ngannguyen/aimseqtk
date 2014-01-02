@@ -19,105 +19,34 @@ from sonLib.bioio import system
 
 import aimseqtk.lib.sample as libsample
 import aimseqtk.lib.common as libcommon
+from aimseqtk.lib.common import Analysis
+from aimseqtk.lib.common import StatAnalyses
+import aimseqtk.lib.tabcommon as tabcommon
 import aimseqtk.lib.statcommon as statcommon
+from aimseqtk.lib.statcommon import SampleStat
+import aimseqtk.src.properties.diversity_plot as dvplot
 import aimseqtk.src.properties.rarefaction_plot as rfplot
 
 
-class SampleSamplingDiversityStats:
+class SampleDiversityStat(SampleStat):
     '''Different indices commpute from samplings of a specific size of
        a sample
     '''
     def __init__(self):
-        self.numclone = None
-        #R vegan: diversity
+        SampleStat.__init__(self)
+        #self.numclone = None
+        # R vegan: diversity
         self.simpson = None 
         self.invsimpson = None
         self.shannon = None
         self.fisher_alpha = None
 
-        #Standard deviation
+        # Standard deviation
         self.numclone_std = None
         self.simpson_std = None 
         self.invsimpson_std = None
         self.shannon_std = None
         self.fisher_alpha_std = None
-
-    def getitems(self):
-        return self.__dict__.keys()
-    
-    def __getitem__(self, name):
-        if name not in self.__dict__:
-            return None
-            #raise KeyError("SampleSamplingDiverisity does not have attribute %s" % name)
-        return self.__dict__[name]
-
-    def __setitem__(self, name, val):
-        self.__dict__[name] = val
-
-def diversity_text(stats, outfile, indices):
-    # Rows = Samples, Columns = Diversity_indices
-    f = open(outfile, 'w')
-    f.write("#Sample\t%s\n" % "\t".join(indices))
-    for (name, stat) in stats:
-        f.write("%s" % name)
-        for index in indices:
-            if index not in stat.getitems():
-                f.write("\tNA")
-            else:
-                f.write("\t%.3f" % stat[index])
-                stdindex = "%s_std" % index
-                if stdindex in stat.getitems():
-                    std = stat[stdindex]
-                    f.write(" +/- %.3f" % std)
-        f.write("\n")
-    f.close()
-
-def diversity_latex_tab(f, stats, indices):
-    for (name, stat) in stats:
-        f.write("%s" % name.replace('_', '\_'))
-        for index in indices:
-            if index not in stat.getitems():
-                f.write(" & NA")
-            else:
-                f.write(" & %.3f" % stat[index])
-                stdindex = "%s_std" % index
-                if stdindex in stat.getitems():
-                    std = stat[stdindex]
-                    f.write(" $\pm$ %.3f" % std)
-        f.write("\\\\\n")
-        f.write("\\hline\n")
-
-def diversity_latex(stats, outfile, indices):
-    f = open(outfile, 'w')
-    libcommon.write_doc_start(f)
-    colnames = ["Sample"] + indices
-    colnames = [c.replace('_', '\_') for c in colnames]
-    libcommon.tab_header(f, colnames)
-    diversity_latex_tab(f, stats, indices)
-    caption = "Diversity indices"
-    label = ''
-    libcommon.tab_closer(f, caption, label)
-    libcommon.write_doc_end(f)
-    f.close()
-
-def diversity_table(name2stat, outfile, indices, group2avr={},
-                    group2names={}, tex=False, keyindex='numclone'):
-    if not name2stat or not indices:
-        return
-    # Sort the samples by group and/or size
-    names = []
-    if keyindex not in indices:
-        keyindex = indices[0]
-    keyfunc = lambda item: item[keyindex]
-    if group2avr:
-        sortedstats = libcommon.sort_objs_by_group(name2stat, group2names,
-                                           True, group2avr, keyfunc=keyfunc)
-    else:
-        sortedstats = libcommon.sort_dict_by_value(name2stat, keyfunc=keyfunc)
-    if tex:
-        diversity_latex(sortedstats, outfile, indices)
-    else:
-        diversity_text(sortedstats, outfile, indices)
 
 def rf_diversity_table(name2size2sampling, outfile, index):
     # Rows = Sampling_Sizes, Columns = Samples
@@ -145,13 +74,18 @@ def rf_diversity_table(name2size2sampling, outfile, index):
         f.write("\n")
     f.close()
 
-def sample_sampling_diversity(sample, size, indices):
+#def sample_sampling_diversity(sample, size, indices):
+def sample_sampling_diversity(sample, args=None):
     # Sampling sample to "size, and compute the "index" of the subsample
+    assert len(args) == 2
+    size = args[0]
+    indices = args[1]
     if size is None:  # no sampling, compute diversity of original sample
         subsample = sample
     else:
-        subsample = libsample.sampling(sample, size)
-    sampling = SampleSamplingDiversityStats()
+        subsample = libsample.sampling(sample, [size])
+    sampling = SampleDiversityStat()
+    sampling.set_sample_info(subsample)
     counts = [clone.count for clone in subsample.clones]
 
     #import rpy2.rinterface as rinterface
@@ -175,7 +109,11 @@ def sample_sampling_diversity(sample, size, indices):
     return sampling
 
 def sample_avr_sampling_diversity(samplings, indices):
-    avrsampling = SampleSamplingDiversityStats()
+    assert len(samplings) >= 1
+    avrsampling = SampleDiversityStat()
+    s1 = samplings[0]
+    avrsampling.set_sample_info2(s1.name, s1.group, s1.color, s1.marker)
+
     stds = ["%s_std" % i for i in indices]
     for i, index in enumerate(indices):
         vals = [sampling[index] for sampling in samplings]
@@ -196,6 +134,28 @@ def sample_rf_sizes(sample, bin=None, rf_sizes=None):
     if len(sizes) == 0:
         sizes = [sample.size]
     return sizes
+
+def diversity_ttest_text(index2obj, outfile):
+    # obj: (pair2(tval, pval), group2(mean, std))
+    f = open(outfile, 'w')
+    f.write("#Index\tSample_Pair\tt_value\tp_value\tMean1\tStd1\tMean2\tStd2\n")
+    for index in sorted(index2obj.keys()):
+        obj = index2obj[index]
+        assert len(obj) == 2
+        pair2stat = obj[0]
+        group2mean = obj[1]
+        for pair in sorted(pair2stat.keys()):
+            tval, pval = pair2stat[pair]
+            groups = pair.split('_')
+            assert len(groups) == 2
+            (mean1, std1) = group2mean[groups[0]]
+            (mean2, std2) = group2mean[groups[1]]
+            vals = [tval, pval, mean1, std1, mean2, std2]
+            valstrs = []
+            for v in vals:
+                valstrs.append(libcommon.pretty_float(v))
+            f.write("%s\t%s\t%s\n" % (index, pair, '\t'.join(valstrs)))
+    f.close()
 
 def check_rarefaction_options(parser, options):
     if options.rf_sizes:
@@ -230,19 +190,6 @@ def add_rarefaction_options(parser):
     parser.add_option_group(group)
 
 #============ PARALLELIZE =============
-class SampleSamplingDiversity(Target):
-    def __init__(self, outfile, sample, size, indices):
-        Target.__init__(self)
-        self.outfile = outfile
-        self.sample = sample
-        self.size = size
-        self.indices = indices
-
-    def run(self):
-        sampling = sample_sampling_diversity(self.sample, self.size,
-                                             self.indices)
-        pickle.dump(sampling, gzip.open(self.outfile, "wb"))
-
 class AvrSamplingDiversity(Target):
     def __init__(self, indir, indices, outdir):
         Target.__init__(self)
@@ -253,11 +200,7 @@ class AvrSamplingDiversity(Target):
     def run(self):
         for sizedir in os.listdir(self.indir):
             sizedirpath = os.path.join(self.indir, sizedir)
-            samplings = []
-            for file in os.listdir(sizedirpath):
-                filepath = os.path.join(sizedirpath, file)
-                sampling = pickle.load(gzip.open(filepath, "rb"))
-                samplings.append(sampling)
+            samplings = libcommon.load_pickledir(sizedirpath)
             avrsampling = sample_avr_sampling_diversity(samplings, 
                                                         self.indices)
             outfile = os.path.join(self.outdir, "%s.pickle" % sizedir)
@@ -282,8 +225,8 @@ class SampleDiversityRarefaction(Target):
             system("mkdir -p %s" % sizedir)
             for i in xrange(self.numsampling):
                 outfile = os.path.join(sizedir, "%d.pickle" % i)
-                self.addChildTarget(SampleSamplingDiversity(outfile,
-                                        self.sample, size, self.indices))
+                self.addChildTarget(libsample.SampleAnalysis(self.sample,
+                       outfile, sample_sampling_diversity, size, self.indices))
         self.setFollowOnTarget(AvrSamplingDiversity(self.outdir, self.indices,
                                                     self.avrdir))
 
@@ -342,9 +285,9 @@ class DiversityRarefactionSummary(Target):
             if g2s:
                 g2avr = libcommon.get_group_avr(name2sampling, g2s)
             txtfile = os.path.join(txtdir, "diversity_%d.txt" % size)
-            diversity_table(name2sampling, txtfile, indices, g2avr, g2s)
+            tabcommon.table(name2sampling, txtfile, indices, g2avr, g2s)
             texfile = os.path.join(texdir, "diversity_%d.tex" % size)
-            diversity_table(name2sampling, texfile, indices, g2avr, g2s, True)
+            tabcommon.table(name2sampling, texfile, indices, g2avr, g2s, True)
 
 class DiversityRarefaction(Target):
     # diversity_avr/sample/size.pickle
@@ -375,6 +318,7 @@ class DiversityRarefaction(Target):
                                    self.name2sample, self.options))
 
 class DiversityTtest(Target):
+    #Outfile: index.pickle (pair2tv, group2meanstd)
     def __init__(self, outdir, index, g2n, name2stat, matched, plotfmt,
                                                                       plotdir):
         Target.__init__(self)
@@ -387,42 +331,50 @@ class DiversityTtest(Target):
         self.plotdir = plotdir
 
     def run(self):
-        g2stat, g2mean = statcommon.ttest_allpairs(self.g2n, self.name2stat,
+        p2stat, g2mean = statcommon.ttest_allpairs(self.g2n, self.name2stat,
                                                    self.matched, self.index)
         picklefile = os.path.join(self.outdir, "%s.pickle" % self.index)
-        pickle.dump((g2stat, g2mean), gzip.open(picklefile, 'wb'))
+        pickle.dump((p2stat, g2mean), gzip.open(picklefile, 'wb'))
         if self.plotfmt:
             plotfile = os.path.join(plotdir, self.index)
-            
+            dvplot.draw_diversity_plot(self.g2n, self.name2stat, self.index,
+                                       plotfile, self.plotfmt)
 
-class DiversitySummary(Target):
+class DiversityTtestSummary(StatAnalyses):
+    '''Print table summary of the ttest statistics
+       Indir: index.pickle (pair2tv, group2meanstd)
+       Outtable: cols: Index, PairSamples, tval, pval, mean1 +- std1,
+       mean2 +- std2;  rows: each index, each sample pair
+    '''
+    def __init__(self, indir, outdir):
+        StatAnalyses.__init__(self, indir, outdir)
+
+    def run(self):
+        index2obj = self.name2obj
+        txtfile = os.path.join(self.outdir, "diversity_ttests.txt")
+        diversity_ttest_text(index2obj, txtfile)
+
+class DiversitySummary(StatAnalyses):
     #  table of diversity indices
     def __init__(self, sampledir, outdir, indices, group2samples, matched,
                                                                  plotfmt=None):
-        Target.__init__(self)
-        self.sampledir = sampledir
-        self.outdir = outdir
+        StatAnalyses.__init__(self, sampledir, outdir)
         self.indices = indices
         self.group2samples = group2samples
         self.matched = matched
         self.plotfmt = plotfmt
 
     def run(self):
-        name2sampling = {}
-        for file in os.listdir(self.sampledir):
-            name, ext = os.path.splitext(file)
-            filepath = os.path.join(self.sampledir, file)
-            sampling = pickle.load(gzip.open(filepath, "rb"))
-            name2sampling[name] = sampling
+        name2sampling = self.name2obj
         # Print out summary table
         g2s = self.group2samples
         g2avr = {}
         if g2s:
             g2avr = libcommon.get_group_avr(name2sampling, g2s)
         txtfile = os.path.join(self.outdir, "diversity.txt")
-        diversity_table(name2sampling, txtfile, self.indices, g2avr, g2s)
+        tabcommon.table(name2sampling, txtfile, self.indices, g2avr, g2s)
         texfile = os.path.join(self.outdir, "diversity.tex")
-        diversity_table(name2sampling, texfile, self.indices, g2avr, g2s, True)
+        tabcommon.table(name2sampling, texfile, self.indices, g2avr, g2s, True)
 
         # For each diversity index, each pair of groups, perform ttest
         # and draw plot
@@ -433,10 +385,9 @@ class DiversitySummary(Target):
             for index in self.indices:
                 self.addChildTarget(DiversityTtest(global_dir, index, g2s,
                             name2sampling, self.matched, self.plotfmt, outdir))
-            self.setFollowOnTarget(DiversityTtestSummary(global_dir, outdir,
-                                                                 self.indices))
+            self.setFollowOnTarget(DiversityTtestSummary(global_dir, outdir))
 
-class Diversity(Target):
+class Diversity(Analysis):
     '''Calculate diversity indices for input samples. No sampling.
        Table: Rows=Samples; Cols=Indices
        If group2samples is provided: perform statistic test comparing
@@ -445,9 +396,7 @@ class Diversity(Target):
     '''
     def __init__(self, samples, outdir, indices, group2samples, matched,
                                                                  plotfmt=None):
-        Target.__init__(self)
-        self.samples = samples
-        self.outdir = outdir
+        Analysis.__init__(self, samples, outdir)
         self.indices = indices
         self.group2samples = group2samples
         self.matched = matched
@@ -458,8 +407,8 @@ class Diversity(Target):
         global_dir = self.getGlobalTempDir()
         for sample in self.samples:
             outfile = os.path.join(global_dir, "%s.pickle" % sample)
-            self.addChildTarget(SampleSamplingDiversity(outfile, sample,
-                                                      size, self.indices))
+            self.addChildTarget(libsample.SampleAnalysis(self.sample, outfile,
+                               sample_sampling_diversity, size, self.indices))
         self.setFollowOnTarget(DiversitySummary(global_dir, self.outdir,
                 self.indices, self.group2samples, self.matched, self.plotfmt))
 

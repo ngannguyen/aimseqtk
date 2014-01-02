@@ -67,13 +67,13 @@ class TestSampling(unittest.TestCase):
         self.s2j = {"ATCG": ["J1"], "CGTA": ["J2"], "AAAA": ["J3"], "TTTT": ["J4"]}
 
     def test_sampling(self):
-        self.assertRaises(ValueError, libsample.sampling, None, 5)
+        self.assertRaises(ValueError, libsample.sampling, None, [5])
         empty_sample = libsample.Sample("Empty", [])
-        self.assertRaises(ValueError, libsample.sampling, empty_sample, 7)
-        self.assertRaises(ValueError, libsample.sampling, self.sample, 0)
-        self.assertRaises(ValueError, libsample.sampling, self.sample, 20)
+        self.assertRaises(ValueError, libsample.sampling, empty_sample, [7])
+        self.assertRaises(ValueError, libsample.sampling, self.sample, [0])
+        self.assertRaises(ValueError, libsample.sampling, self.sample, [20])
 
-        subsample = libsample.sampling(self.sample, 7)
+        subsample = libsample.sampling(self.sample, [7])
         self.assertTrue(len(subsample.clones) <= 4)
         self.assertEqual(subsample.size, 7)
         size = sum([c.count for c in subsample.clones])

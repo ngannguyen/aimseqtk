@@ -14,38 +14,19 @@ import cPickle as pickle
 from optparse import OptionGroup
 
 import rpy2.robjects as robjs
+import rpy2.robjects.numpy2ri as rpyn
 from jobTree.scriptTree.target import Target
 from sonLib.bioio import system
 
 import aimseqtk.lib.sample as libsample
 import aimseqtk.lib.common as libcommon
+import aimseqtk.lib.statcommon as statcommon
 
-
-def getclone2samples(samples, sizetype):
-    clone2sample2size = {}
-    for sample in samples:
-        name = sample.name
-        for clone in sample.clones:
-            ids = clone.get_vjseq_id()
-            assert len(ids) > 0
-            size = clone[sizetype]
-            size /= len(ids)
-            if size == 0:  #len(ids) > size
-                assert sizetype == 'count'
-                size = 1
-            for id in ids:
-                if id not in clone2sample2size:
-                    clone2sample2size[id] = {name: size}
-                elif name not in clone2sample2size[id]:
-                    clone2sample2size[id][name] = size
-                else:
-                    clone2sample2size[id][name] += size
-    return clone2sample2size
 
 def clone_matrix(samples, sizetype):
     # Convert into a matrix. Cols = Samples, Rows = Clones, Cells = Sizes
     # Sizes can be count or freq or normfreq (sizetype)
-    clone2sample2size = getclone2samples(samples, sizetype)
+    clone2sample2size = statcommon.get_clone2samples(samples, sizetype)
     colnames = [s.name for s in samples]  # sample names
     rownames = clone2sample2size.keys()  # clone ids: v_cdr3_j
     rows = []
@@ -99,19 +80,19 @@ def normalize_MRexp(samples, sizetype):
 def matrix_to_normcount(matrix, samples):
     # read normalized count from matrix (row=clone; col=sample) and
     # update the samples' clones
-    samplenames = matrix.rownames
-    cloneids = matrix.colnames
+    samplenames = matrix.colnames
+    cloneids = matrix.rownames
     for sample in samples:
         if sample.name not in samplenames:
             sys.stderr.write(("Warning: sample %s does not have normalized "
                               % sample.name + "count."))
             continue
         for clone in sample.clones:
-            normcount = 0
+            normcount = 0.0
             for id in clone.vjseq_ids:
                 assert id in cloneids
-                nc = matrix.rx[sample.name, id]
-                normcount += nc
+                nc = matrix.rx[id, sample.name]
+                normcount = normcount + rpyn.ri2numpy(nc)[0]
             clone.set_normcount(normcount)
     return samples
 

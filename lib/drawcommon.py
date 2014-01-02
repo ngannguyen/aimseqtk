@@ -10,6 +10,8 @@ import os
 import sys
 from optparse import OptionGroup
 
+import matplotlib
+matplotlib.use('Agg')
 
 def get_colors_medium():
     # blue, red, green, purple, orange, green-ish, yellow, brown, pink 
@@ -59,6 +61,15 @@ def get_name2color_wtgroup(names, name2group, group2names):
     else:
         name2color = get_name2color(names)
     return name2color
+
+def get_name2marker(names):
+    markers = get_markers()
+    if len(names) > len(markers):
+        markers = ['.'] * len(names)
+    name2marker = {}
+    for i, name in enumerate(names):
+        name2marker[name] = markers[i]
+    return name2marker
 
 def get_name2marker_wtgroup(samplenames, group2names):
     markers = get_markers()
@@ -187,15 +198,15 @@ def edit_spine2(top_axes, bottom_axes):
     bottom_axes.yaxis.set_ticks_position('left')
 
 def edit_spine(axes):                                                                 
-    for loc, spine in axes.spines.iteritems():                                          
+    for loc, spine in axes.spines.iteritems():
         if loc in ['left', 'bottom']:                                                 
             spine.set_position(('outward', 10))                                       
-        elif loc in ['right', 'top']:                                                   
-            spine.set_color('none')                                                     
-        else:                                                                           
+        elif loc in ['right', 'top']:
+            spine.set_color('none')
+        else:
             raise ValueError('Unknown spine location %s\n' % loc)                     
-                                                                                        
-def set_ticks(axes):                                                                   
+
+def set_ticks(axes):
     axes.xaxis.set_ticks_position('bottom')                                           
     axes.yaxis.set_ticks_position('left')                                             
     minorLocator = LogLocator(base=10, subs = range(1, 10))                           
@@ -221,4 +232,24 @@ def bihist(y1, y2, axes, bins, orientation, color=None):
         ymin = min([i.get_width() for i in patch2])
     #axes.set_ylim(ymin*1.1, ymax*1.1)
     return ymin, ymax
+
+def draw_heatmap(rownames, colnames, rows, outfile):
+    import rpy2.robjects as ro
+    from rpy2.robjects.packages import importr
+    gplots = importr('gplots')
+    grdevices = importr('grDevices')
+    # convert rows into r matrix
+    mvec = []
+    for row in rows:
+        mvec.extend(row)
+    rvec = ro.FloatVector(mvec)
+    rrownames = ro.StrVector(rownames)
+    rcolnames = ro.StrVector(colnames)
+    rmatrix = ro.r['matrix'](rvec, nrow=len(rows), byrow=True)
+
+    grdevices.pdf(file=outfile)
+    gplots.heatmap_2(rmatrix, Rowv=True, Colv=True, labRow=rrownames,
+                                                    labCol=rcolnames)
+    grdevices.dev_off()
+
 

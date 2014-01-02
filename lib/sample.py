@@ -173,6 +173,8 @@ class WriteSample(Target):
             write_sample(npfile, self.npsample) 
                 
 class FilterBySize(Target):
+    '''Filter a sample by clone size
+    '''
     def __init__(self, outfile, sample, mincount=-1, maxcount=-1,
                  minfreq=-1, maxfreq=-1, freqadjust=False):
         Target.__init__(self)
@@ -248,7 +250,12 @@ will inherently have more overlapping with other samples than a smaller sample.
 The purpose of sampling is to make sure that every sample has the same number 
 of starting sequences to avoid the bias
 '''
-def sampling(sample, size):
+#def sampling(sample, size):
+def sampling(sample, args=None):
+    if not args:
+        return sample
+        #raise ValueError("Sample sampling: sample is None or has 0 clone.\n")
+    size = args[0]
     if sample is None or sample.size == 0: 
         raise ValueError("Sample sampling: sample is None or has 0 clone.\n")
     if size <= 0 or size > sample.size:
@@ -294,16 +301,29 @@ def sampling_uniq(sample, size):
 
     return newsample
 
-class Sampling(Target):
-    def __init__(self, sample, size, outdir):
+#class Sampling(Target):
+#    def __init__(self, sample, size, outdir):
+#        Target.__init__(self)
+#        self.sample = sample
+#        self.size = size
+#        self.outdir = outdir
+#
+#    def run(self):
+#        subsample = sampling(self.sample, self.size)
+#        outfile = os.path.join(self.outdir, "%s.pickle" % sample.name)
+#        pickle.dump(subsample, gzip.open(outfile, "wb"))
+
+class SampleAnalysis(Target):
+    '''General child job Obj to do analysis for a specific sample
+    '''
+    def __init__(self, sample, outfile, func, *func_args):
         Target.__init__(self)
         self.sample = sample
-        self.size = size
-        self.outdir = outdir
-
+        self.outfile = outfile
+        self.func = func
+        self.func_args = func_args
+    
     def run(self):
-        subsample = sampling(self.sample, self.size)
-        outfile = os.path.join(self.outdir, "%s.pickle" % sample.name)
-        pickle.dump(subsample, gzip.open(outfile, "wb"))
-       
-
+        result_obj = self.func(self.sample, args=self.func_args)
+        pickle.dump(result_obj, gzip.open(outfile, 'wb')) 
+    

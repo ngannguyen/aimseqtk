@@ -12,8 +12,6 @@ import sys
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as pyplot
-import matplotlib.ticker as ticker
-from matplotlib.font_manager import FontProperties
 
 import aimseqtk.lib.drawcommon as drawcommon
 

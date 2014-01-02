@@ -54,8 +54,8 @@ class TestSamplingDiversity(unittest.TestCase):
     def test_sampling_diversity(self):
         indices = ['numclone', 'fisher_alpha', 'simpson', 'shannon',
                    'invsimpson']
-        sampling = diversity.sample_sampling_diversity(self.sample, 5, 
-                                                       indices)
+        sampling = diversity.sample_sampling_diversity(self.sample, 
+                                                       [5, indices])
         for i in indices:
             self.assertTrue(i in sampling.getitems())
             self.assertTrue(sampling[i] is not None)

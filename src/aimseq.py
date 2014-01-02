@@ -33,7 +33,11 @@ import aimseqtk.lib.sample as libsample
 import aimseqtk.src.input.inputcommon as incommon
 import aimseqtk.src.properties.repsize as repsize
 import aimseqtk.src.properties.diversity as diversity
+import aimseqtk.src.properties.similarity as similarity
+import aimseqtk.src.properties.clonesize as clonesize
 import aimseqtk.src.normalize as normalize
+import aimseqtk.src.overlap.overlap as overlap
+import aimseqtk.src.overlap.trackclone as trackclone
 
 
 #======== MAIN PIPELINE ========
@@ -60,7 +64,7 @@ class Setup(Target):
             self.setFollowOnTarget(Filter(sampledir, self.options))
 
 class Filter(Target):
-    '''Filter each sample by size (min and/or max count and/or freq)
+    '''Filter each sample by size (min_ and/or max_ count and/or freq)
     '''
     def __init__(self, sampledir, options):
         Target.__init__(self)
@@ -185,8 +189,9 @@ class DownSampling(Target):
         for file in os.listdir(self.sampledir):
             filepath = os.path.join(self.sampledir, file)
             sample = pickle.load(gzip.open(filepath, 'rb'))
-            self.addChildTarget(libsample.Sampling(sample, opts.sampling,
-                                                   global_dir))
+            picklefile = os.path.join(global_dir, "%s.pickle" % sample.name) 
+            self.addChildTarget(libsample.SampleAnalysis(sample, picklefile,
+                                            libsample.sampling, opts.sampling))
         if opts.normalize:
             self.setFollowOnTarget(Normalize(global_dir, opts))
         else:
@@ -227,32 +232,35 @@ class Analyses(Target):
         if opts.makeplots:
             plotfmt = opts.plotformat
         if 'diversity' in opts.analyses:
-            diversitydir = analysis_outdir("diversity", opts.outdir)
-            self.addChildTarget(diversity.Diversity(samples, diversitydir,
+            diverdir = analysis_outdir("diversity", opts.outdir)
+            self.addChildTarget(diversity.Diversity(samples, diverdir,
                                        opts.diversity, opts.group2samples,
                                        opts.matched, plotfmt))
         if 'similarity' in opts.analyses:
-            similaritydir = analysis_outdir("similarity", opts.outdir)
-            self.addChildTarget(similarity.Similarity(samples, similaritydir,
-                                                      opts))
+            simidir = analysis_outdir("similarity", opts.outdir)
+            self.addChildTarget(similarity.Similarity(samples, simidir, opts))
         if 'clonesize' in opts.analyses:
-            clonesizedir = analysis_outdir("clonesize", opts.outdir)
-            self.addChildTarget(clonesize.CloneSize(samples, clonesizedir,
-                                                                      opts))
+            csdir = analysis_outdir("clonesize", opts.outdir)
+            self.addChildTarget(clonesize.CloneSize(samples, csdir, opts))
         if 'lendist' in opts.analyses:
-            lendistdir = analysis_outdir("lendist", opts.outdir)
-            self.addChildTarget(lendist.LenDist(samples, lendistdir, opts))
+            lddir = analysis_outdir("lendist", opts.outdir)
+            self.addChildTarget(lendist.LenDist(samples, lddir, opts))
         if 'geneusage' in opts.analyses:
-            geneusagedir = analysis_outdir("geneusage", opts.outdir)
-            self.addChildTarget(geneusage.GeneUsage(samples, geneusagedir,
-                                                                     opts))
-        if 'aausage' in opts.analyses:
-            aausagedir = analysis_outdir("aausage", opts.outdir)
-            self.addChildTarget(aausage.AaUsage(samples, aausagedir, opts))
+            gudir = analysis_outdir("geneusage", opts.outdir)
+            self.addChildTarget(geneusage.GeneUsage(samples, gudir, opts))
+        #if 'aausage' in opts.analyses:
+        #    audir = analysis_outdir("aausage", opts.outdir)
+        #    self.addChildTarget(aausage.AaUsage(samples, audir, opts))
+        if 'overlap' in opts.analyses:
+            odir = analysis_outdir("overlap", opts.outdir)
+            self.addChildTarget(overlap.Overlap(samples, odir, opts))
         if 'trackclone' in opts.analyses:
-            trackclonedir = analysis_outdir("trackclone", opts.outdir)
-            self.addChildTarget(trackclone.TrackClone(samples, trackclonedir,
-                                                                       opts))
+            tdir = analysis_outdir("track_top_clones", opts.outdir)
+            self.addChildTarget(trackclone.TrackTopClones(samples, tdir, opts))
+        if opts.clones:
+            cdir = analysis_outdir("track_clones", opts.outdir)
+            self.addChildTarget(trackclone.TrackClones(samples, cdir, opts,
+                                                                  opts.clones))
 
 def analysis_outdir(analysis, outdir):
     analysis_dir = os.path.join(outdir, analysis)
@@ -263,6 +271,10 @@ def add_options(parser):
     incommon.add_input_options(parser)
     incommon.add_filter_options(parser)
     diversity.add_rarefaction_options(parser)
+    similarity.add_similarity_options(parser)
+    clonesize.add_clonesize_options(parser)
+    overlap.add_overlap_options(parser)
+    trackclone.add_track_clone_options(parser)
 
 def check_options(parser, options):
     incommon.check_input_options(parser, options)

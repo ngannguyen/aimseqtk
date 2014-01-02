@@ -77,9 +77,10 @@ class Clone():
         return "\t".join(vals)
 
     def set_normcount(self, normcount):
-        self.normcount = normcount
+        #self.normcount = normcount
+        self.__dict__['normcount'] = normcount
 
-    def get_vjseq_id(self):
+    def get_vjseq_ids(self):
         ids = []
         seq = self.cdr3nuc
         if self.cdr3nuc is None:

@@ -13,13 +13,27 @@ import numbers
 import cPickle as pickle
 from optparse import OptionParser
 
+from jobTree.scriptTree.target import Target
+
 
 class InputError(Exception):
     pass
 
+def get_cumulative(vals, forward=False):
+    if forward:
+        return [sum(vals[: i + 1]) for i in xrange(len(vals))]
+    else:
+        return [sum(vals[i: ]) for i in xrange(len(vals))]
+
+def get_pc(myval, total):
+    if total == 0:
+        return 0.0
+    else:
+        return 100.0 * myval / total
+
 def sort_dict_by_value(mydict, keyfunc=None):
     # Return a list of tuples
-    items = [(v, k) for k, v in dictionary.items()]
+    items = [(v, k) for k, v in mydict.items()]
     if keyfunc is None:
         items = sorted(items, reverse=True)
     else:
@@ -40,7 +54,7 @@ def sort_objs_by_group(name2obj, group2names, addgroup, group2avr,
             assert group in group2avr
             groupavr = group2avr[group]
             sorted_items.append(groupavr)
-    return sorted_objs
+    return sorted_items
 
 def get_group_avr(name2obj, group2names):
     # for each group, return an ojb whose attributes are average of the
@@ -58,13 +72,25 @@ def get_group_avr(name2obj, group2names):
         for attr in avrobj.getitems():
             val = avrobj[attr]
             if isinstance(val, numbers.Number):
-                avrobj.__setattr__(attr, 0)
+                avrobj.__setitem__(attr, 0)
+            elif isinstance(val, list):
+                if len(val) > 0:
+                    numericlist = True
+                    for vitem in val:
+                        if not isinstance(vitem, numbers.Number):
+                            numericlist = False
+                            break
+                    if numericlist:
+                        init_val = [0 for vitem in val]
+                        avrobj.__setitem__(attr, init_val)
+                    else:
+                        avrobj.__setitem__(attr, None)
             elif attr == 'name':
-                avrobj.__setattr__(attr, avrname)
+                avrobj.__setitem__(attr, avrname)
             elif attr == 'group':
-                avrobj.__setattr__(attr, group)
+                avrobj.__setitem__(attr, group)
             elif not isinstance(val, str):
-                avrobj.__setattr__(attr, None)
+                avrobj.__setitem__(attr, None)
 
         # Update all the numeric attributes
         for name in names:  # each member
@@ -74,12 +100,26 @@ def get_group_avr(name2obj, group2names):
                 val = obj[attr]
                 if isinstance(val, numbers.Number):
                     newval = avrobj[attr] + val
-                    avrobj.__setattr__(attr, newval)
+                    avrobj.__setitem__(attr, newval)
+                elif isinstance(val, list):  # attr is a list of numeric values
+                    if len(val) > 0:
+                        for i, vitem in enumerate(val):
+                            if isinstance(vitem, numbers.Number):
+                                newvitem = avrobj[attr][i] + vitem
+                                avrobj[attr][i] = newvitem
+
         for attr in avrobj.getitems():
             val = avrobj[attr]
             if isinstance(val, numbers.Number):
                 avrval = val/len(names)
-                avrobj.__setattr__(attr, avrval)
+                avrobj.__setitem__(attr, avrval)
+            elif isinstance(val, list):
+                if len(val) > 0:
+                    for i, vitem in enumerate(val):
+                        if isinstance(vitem, numbers.Number):
+                            avrvitem = vitem/len(names)
+                            avrobj[attr][i] = avrvitem
+
         group2avr[group] = (avrname, avrobj)
     return group2avr
 
@@ -90,6 +130,15 @@ def load_pickledir(pickledir):
         obj = pickle.load(gzip.open(filepath, "rb"))
         objs.append(obj)
     return objs
+
+def load_pickledir_to_dict(pickledir):
+    name2obj = {}
+    for file in os.listdir(pickledir):
+        filepath = os.path.join(pickledir, file)
+        name = file.splitext()[0]
+        obj = pickle.load(gzip.open(filepath, "rb"))
+        name2obj[name] = obj
+    return name2obj
 
 def get_val2keys(key2vals):
     val2keys = {}
@@ -107,10 +156,20 @@ def get_val2key_1to1(key2vals):
     for k, vals in key2vals.iteritems():
         for v in vals:
             if v in val2key:
-                raise InputError(("%s belongs to multiple groups: " % name
+                raise InputError(("%s belongs to multiple groups: " % v
                                   + "%s, %s" % (k, val2key[v]))) 
             val2key[v] = k
     return val2key
+
+def read_list(file):
+    items = []
+    f = open(file, 'r')
+    for line in f:
+        line = line.strip()
+        if len(line) > 0 and line[0] != '#':
+            items.append(line)
+    f.close()
+    return items
 
 def check_options_dir(dir):
     if not os.path.exists(dir):
@@ -188,6 +247,29 @@ def soft_int(mystr):
     except:
         myint = mystr
     return myint
+
+#================ COMMON STRUCTUREs ==========
+class Analysis(Target):
+    '''Parent object of each type of analyses, e.g Geneusage, Lendist,
+    Similarity, Diversity etc
+    '''
+    def __init__(self, samples, outdir, opts=None, *args):
+        Target.__init__(self)
+        self.samples = samples
+        self.outdir = outdir
+        self.opts = opts
+        self.args = args
+
+class StatAnalyses(Target):
+    '''Parent object which reads in stat objs (one/sample) from indir
+    '''
+    def __init__(self, indir, outdir, opts=None, *args):
+        Target.__init__(self)
+        self.indir = indir
+        self.outdir = outdir
+        self.opts = opts
+        self.args = args
+        self.name2obj = load_pickledir_to_dict(indir)
 
 #============ LATEX related function ============
 def pretty_int(number):
