@@ -9,9 +9,9 @@ Draw rarefaction plots
 import os
 import sys
 
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as pyplot
+#import matplotlib
+#matplotlib.use('Agg')
+#import matplotlib.pyplot as pyplot
 
 import aimseqtk.lib.drawcommon as drawcommon
 
@@ -67,8 +67,10 @@ def draw_rarefaction(name2size2sampling, name2sample, groups, index, outfile,
                    weight='bold')
     axes.set_ylabel(index.title(), size='x-large', weight='bold')
     
-    pyplot.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
-    pyplot.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
+    #pyplot.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
+    #pyplot.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
+    axes.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
+    axes.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
     
     drawcommon.write_image(fig, pdf, outformat, outfile, dpi) 
 

@@ -248,8 +248,15 @@ def draw_heatmap(rownames, colnames, rows, outfile):
     rmatrix = ro.r['matrix'](rvec, nrow=len(rows), byrow=True)
 
     grdevices.pdf(file=outfile)
-    gplots.heatmap_2(rmatrix, Rowv=True, Colv=True, labRow=rrownames,
-                                                    labCol=rcolnames)
+    try:
+        #gplots.heatmap_2(rmatrix)
+        gplots.heatmap_2(rmatrix, Rowv=True, Colv=True, labRow=rrownames,
+                                                        labCol=rcolnames)
+    except:
+        print rmatrix
+        print rrownames
+        print rcolnames
+        #raise RuntimeError("Heatmap errors")
     grdevices.dev_off()
 
 

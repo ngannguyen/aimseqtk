@@ -9,17 +9,10 @@ the samples
 
 import os
 import sys
-import gzip
-import cPickle as pickle
-from optparse import OptionGroup
 
 import rpy2.robjects as robjs
 import rpy2.robjects.numpy2ri as rpyn
-from jobTree.scriptTree.target import Target
-from sonLib.bioio import system
 
-import aimseqtk.lib.sample as libsample
-import aimseqtk.lib.common as libcommon
 import aimseqtk.lib.statcommon as statcommon
 
 

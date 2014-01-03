@@ -186,9 +186,10 @@ def check_input_options(parser, options):
         if options.samout not in ['txt', 'pickle', 'both']:
             raise libcommon.InputError("Unknown sample out format %s." %
                                         options.samout)
-        options.samout = [options.samout]
         if options.samout == 'both':
             options.samout = ['txt', 'pickle']
+        else:
+            options.samout = [options.samout]
         if 'prelim' in analyses and 'pickle' not in options.samout:
             options.samout.append('pickle')
         samoutdir = os.path.join(options.outdir, "samples")

@@ -65,11 +65,12 @@ class Clone():
     def getstr(self):
         fields = self.get_sorted_items()
         vals = []
+        present_fields = self.getitems()
         for field in fields:
-            val = self[field]
-            if val is None:
+            if field not in present_fields or self[field] is None:
                 vals.append('')
             else:
+                val = self[field]
                 if isinstance(val, list):
                     vals.append(", ".join(val))
                 else:
@@ -118,7 +119,6 @@ def clone_parseline(line, index2col):
     for c in required_cols:
         if c not in col2val or not col2val[c]:
             return None
-
     count = int(col2val['count'])
     freq = float(col2val['freq'])
     nuc = col2val['nuc']
@@ -145,4 +145,4 @@ def clone_parseline(line, index2col):
             clone.productive = True
         else:
             clone.productive = False
-
+    return clone

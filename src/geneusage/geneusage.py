@@ -41,7 +41,7 @@ class GeneUsageStat(SampleStat):
         self.type2gene2clones = type2gene2clones
         self.type2gene2reads = type2gene2reads
 
-def sample_geneusage_stat(sample):
+def sample_geneusage_stat(sample, args=None):
     # gene usage of a specific number
     # initialize usage
     types = ['v', 'd', 'j', 'vj', 'dj']
@@ -133,7 +133,7 @@ def geneusage_ttests(attr, type, outfile, g2n, name2obj, matched, pcutoff):
     for gene in genes:
         pair2tp, group2mean = statcommon.ttest_allpairs(g2n, name2obj, matched,
                                                  attr=None, func=get_geneusage,
-                                                 args=(attr, type, gene))
+                                                 func_args=(attr, type, gene))
         statcommon.ttest_write(f, gene, pair2tp, group2mean, pcutoff)
     f.close()
 
@@ -163,6 +163,7 @@ class GeneUsageAnalyses(StatAnalyses):
         StatAnalyses.__init__(self, indir, outdir, opts)
     
     def run(self):
+        self.load_indir()
         attrs = ['clones', 'reads']
         types = ['v', 'd', 'j', 'vj', 'dj']
         
@@ -174,8 +175,8 @@ class GeneUsageAnalyses(StatAnalyses):
                 system("mkdir -p %s" % plotdir)
                 for type in types:
                     plotfile = os.path.join(plotdir, type)
-                    genes = get_genes(name2obj.values(), type)
-                    self.addChildTarget(guplot.GeneUsagePlot(self.name2stat,
+                    genes = get_genes(self.name2obj.values(), type)
+                    self.addChildTarget(guplot.GeneUsagePlot(self.name2obj,
                                        attr, type, genes, plotfile, self.opts))
             # ttests
             if g2n:
@@ -184,7 +185,7 @@ class GeneUsageAnalyses(StatAnalyses):
                 for type in types:
                     ttestfile = os.path.join(ttestdir, "%s.txt" % type)
                     self.addChildTarget(GeneUsageTtests(attr, type, ttestfile,
-                       g2n, self.name2stat, self.opts.matched, self.opts.pval))
+                       g2n, self.name2obj, self.opts.matched, self.opts.pval))
 
 class GeneUsage(Analysis):
     '''Set up children jobs to compute gene usage for each sample
@@ -196,12 +197,15 @@ class GeneUsage(Analysis):
 
     def run(self):
         global_dir = self.getGlobalTempDir()
+        gu_dir = os.path.join(global_dir, "geneusage_%s" %
+                                     os.path.basename(self.outdir.rstrip('/')))
+        system("mkdir -p %s" % gu_dir)
         for sample in self.samples:
-            outfile = os.path.join(global_dir, "%s.pickle" % sample.name)
+            outfile = os.path.join(gu_dir, "%s.pickle" % sample.name)
             self.addChildTarget(libsample.SampleAnalysis(sample, outfile,
                                                     sample_geneusage_stat))
-        self.setFollowOnTarget(GeneUsageAnalyses(global_dir, self.outdir,
-                                                                self.otps))
+        self.setFollowOnTarget(GeneUsageAnalyses(gu_dir, self.outdir,
+                                                                self.opts))
 
 
 

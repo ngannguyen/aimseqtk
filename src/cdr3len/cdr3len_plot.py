@@ -41,7 +41,7 @@ def draw_lendist(name2obj, attr, outfile, outfmt='pdf', dpi=300):
         lines.append(line)
         linenames.append(obj.name)
         if obj.group not in group2line:
-            group2line[group] = line
+            group2line[obj.group] = line
 
     if len(linenames) > 10:
         linenames = sorted(group2line.keys())
@@ -51,6 +51,6 @@ def draw_lendist(name2obj, attr, outfile, outfmt='pdf', dpi=300):
     
     drawcommon.edit_spine(axes)
     axes.set_xlabel("Length", size='x-large', weight='bold')
-    axes.set_ylabel("% of total %s" % attr, size='x-large', weight='bold')
-    drawcommon.write_image(fig, pdf, outformat, outfile, dpi) 
+    axes.set_ylabel("%% of total %s" % attr, size='x-large', weight='bold')
+    drawcommon.write_image(fig, pdf, outfmt, outfile, dpi) 
 

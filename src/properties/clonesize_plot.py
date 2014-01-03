@@ -12,9 +12,9 @@ cumulative or discrete
 import os
 import sys
 
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as pyplot
+#import matplotlib
+#matplotlib.use('Agg')
+#import matplotlib.pyplot as pyplot
 
 import aimseqtk.lib.drawcommon as drawcommon
 
@@ -72,6 +72,7 @@ def draw_clonesize_dist(name2obj, attr, outfile, outfmt='pdf', dpi=300):
     legend = axes.legend(lines, linenames, numpoints=1, loc='best', ncol=1)
     legend._drawFrame = False
     drawcommon.edit_spine(axes)
+    axes.xaxis.set_ticks(xdata)
     axes.xaxis.set_ticklabels(xlabels)
     
     labels = cs_get_attr_plot_labels(attr, numtop)
@@ -79,5 +80,5 @@ def draw_clonesize_dist(name2obj, attr, outfile, outfmt='pdf', dpi=300):
     axes.set_xlabel(labels[1], size='x-large', weight='bold')
     axes.set_ylabel(labels[2], size='x-large', weight='bold')
 
-    drawcommon.write_image(fig, pdf, outformat, outfile, dpi) 
+    drawcommon.write_image(fig, pdf, outfmt, outfile, dpi) 
 

@@ -6,6 +6,7 @@
 Object represents a TCR repertoire sample
 '''
 
+import os
 import random
 import copy
 import time
@@ -152,6 +153,7 @@ def filter_by_status(sample, productive=True, resetfreq=True):
 
 class WriteSample(Target):
     def __init__(self, psample, npsample, samout, outdir):
+        Target.__init__(self)
         self.psample = psample
         self.npsample = npsample
         self.samout = samout
@@ -165,7 +167,7 @@ class WriteSample(Target):
             pfile = os.path.join(pdir, "pickle", "%s.pickle" % name)
             pickle.dump(self.psample, gzip.open(pfile, "wb"))
             npfile = os.path.join(npdir, "pickle", "%s.pickle" % name)
-            pickle.dump(self.npsample, gzip.open(pfile, "wb"))
+            pickle.dump(self.npsample, gzip.open(npfile, "wb"))
         if 'txt' in self.samout:
             pfile = os.path.join(pdir, "txt", "%s.txt" % name)
             write_sample(pfile, self.psample) 
@@ -196,6 +198,12 @@ class FilterBySize(Target):
         if filterbysize:
             sample = filter_by_size(self.sample, self.mincount, self.maxcount, 
                                   self.minfreq, self.maxfreq, self.freqadjust)
+            if sample.size <= 0:
+                raise ValueError(("After filtering by size, sample %s" 
+                                  % sample.name + " has 0 clone. Please " +
+                                  "remove it and start again or have less " +
+                                  "restrictive filtering."))
+
         pickle.dump(sample, gzip.open(self.outfile, "wb")) 
         mytime = time.time() - starttime
         logger.debug("Filter_by_size for sample %s in %.4f seconds" % 
@@ -213,6 +221,12 @@ class FilterByStatus(Target):
     def run(self):
         starttime = time.time()
         productive_sample = filter_by_status(self.sample, True, self.resetfreq)
+        if productive_sample.size <= 0:
+            raise ValueError(("After filtering by status, sample %s" 
+                                % self.sample.name + " has 0 clone. Please " +
+                                  "remove it and start again or have less " +
+                                  "restrictive filtering."))
+
         nonproductive_sample = filter_by_status(self.sample, False, 
                                                 self.resetfreq)
         pfile = os.path.join(self.pdir, "%s.pickle" % self.sample.name)
@@ -325,5 +339,5 @@ class SampleAnalysis(Target):
     
     def run(self):
         result_obj = self.func(self.sample, args=self.func_args)
-        pickle.dump(result_obj, gzip.open(outfile, 'wb')) 
+        pickle.dump(result_obj, gzip.open(self.outfile, 'wb')) 
     

@@ -55,7 +55,7 @@ def sample_clonesize_stat(sample, freqs=[], numtop=50, args=None):
     stat = CloneSizeStat(sorted(freqs))
     stat.set_sample_info(sample)
     sorted_clones = sorted(sample.clones, reverse=True, key=lambda c: c.freq)
-    
+   
     for index, clone in enumerate(sorted_clones):
         if index < numtop:
             stat.topfreqs.append(clone.freq)
@@ -96,8 +96,9 @@ class CloneSizePlots(StatAnalyses):
         StatAnalyses.__init__(self, indir, outdir, opts)
 
     def run(self):
+        self.load_indir()
+        name2obj = self.name2obj
         opts = self.opts
-        name2obj = libcommon.load_pickledir_to_dict(self.indir)
         assert len(name2obj) > 0
         obj0 = name2obj.values()[0]
         numsam = len(name2obj)
@@ -115,23 +116,23 @@ class CloneSizePlots(StatAnalyses):
             
         attrs = ['numclones', 'counts', 'topfreqs', 'numclones_cumul',
                  'counts_cumul', 'topfreqs_cumul']
-        txtdir = os.path.join(self.indir, "txt_tables")
+        txtdir = os.path.join(self.outdir, "txt_tables")
         system("mkdir -p %s" % txtdir)
         plotdir = None
         if opts.makeplots:
-            plotdir = os.path.join(self.indir, "figures")
+            plotdir = os.path.join(self.outdir, "figures")
             system("mkdir -p %s" % plotdir)
         
         for attr in attrs:
             txtfile = os.path.join(txtdir, "%s.txt" % attr)
             colfields = get_attr_colfields(attr, obj0)
-            tabcommon.table(name2obj, txtfile, colfields, g2name_avr, g2s,
-                                                    keyattr=attr, islist=True)
+            tabcommon.table(name2obj, txtfile, colfields, g2name_avr,
+                                               g2s, keyattr=attr, islist=True)
             if opts.makeplots:
                 plotfile = os.path.join(plotdir, attr)
                 if numsam < 100 or opts.cs_force_all:
                     csplot.draw_clonesize_dist(name2obj, attr, plotfile,
-                                                        opts.outfmt, opts.dpi)
+                                                    opts.plotformat, opts.dpi)
                 elif g2avr:
                     csplot.draw_clonesize_dist(g2avr, attr, plotfile,
                                                         opts.outfmt, opts.dpi)
@@ -145,9 +146,12 @@ class CloneSize(Analysis):
     def run(self):
         opts = self.opts
         global_dir = self.getGlobalTempDir()
+        cs_dir = os.path.join(global_dir, "clonesize_%s" %
+                                     os.path.basename(self.outdir.rstrip('/')))
+        system("mkdir -p %s" % cs_dir)
         for sample in self.samples:
-            outfile = os.path.join(global_dir, "%s.pickle" % sample.name)
+            outfile = os.path.join(cs_dir, "%s.pickle" % sample.name)
             self.addChildTarget(libsample.SampleAnalysis(sample, outfile,
                                                         sample_clonesize_stat))
-        self.setFollowOnTarget(CloneSizePlots(global_dir, self.outdir, opts))
+        self.setFollowOnTarget(CloneSizePlots(cs_dir, self.outdir, opts))
 

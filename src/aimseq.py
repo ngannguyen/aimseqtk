@@ -36,6 +36,8 @@ import aimseqtk.src.properties.diversity as diversity
 import aimseqtk.src.properties.similarity as similarity
 import aimseqtk.src.properties.clonesize as clonesize
 import aimseqtk.src.normalize as normalize
+import aimseqtk.src.cdr3len.cdr3len as lendist
+import aimseqtk.src.geneusage.geneusage as geneusage
 import aimseqtk.src.overlap.overlap as overlap
 import aimseqtk.src.overlap.trackclone as trackclone
 
@@ -51,17 +53,17 @@ class Setup(Target):
         self.options = options
 
     def run(self):
-        if self.options.format == 'pickle':
-            self.addChildTarget(Preprocess(sampledir, self.options))
+        opts = self.options
+        if opts.format == 'pickle':
+            self.addChildTarget(Preprocess(opts.indir, opts))
         else:
             # Read input files:
             global_dir = self.getGlobalTempDir()
             sampledir = os.path.join(global_dir, "samples")
             system("mkdir -p %s" % sampledir)
             self.addChildTarget(incommon.ReadCloneFiles(sampledir,
-                                self.options.indir, self.options.format,
-                                self.options.ext))
-            self.setFollowOnTarget(Filter(sampledir, self.options))
+                                opts.indir, opts.format, opts.ext))
+            self.setFollowOnTarget(Filter(sampledir, opts))
 
 class Filter(Target):
     '''Filter each sample by size (min_ and/or max_ count and/or freq)
@@ -131,6 +133,7 @@ class Preprocess(Target):
        go to the beginning of analyses
     '''
     def __init__(self, sampledir, options):
+        Target.__init__(self)
         self.sampledir = sampledir
         self.options = options
 
@@ -152,7 +155,7 @@ class RepSize(Target):
     '''
     def __init__(self, sampledir, options):
         Target.__init__(self)
-        self.sampledir = indir
+        self.sampledir = sampledir
         self.options = options
 
     def run(self):
@@ -179,23 +182,26 @@ class DownSampling(Target):
        normalization step if requestedd, otherwise move to analyses
     '''
     def __init__(self, sampledir, options):
-        Target.__init(self)
+        Target.__init__(self)
         self.sampledir = sampledir
         self.options = options
 
     def run(self):
         opts = self.options
         global_dir = self.getGlobalTempDir()
+        sampling_dir = os.path.join(global_dir, "down_sampling")
+        system("mkdir -p %s" % sampling_dir)
+
         for file in os.listdir(self.sampledir):
             filepath = os.path.join(self.sampledir, file)
             sample = pickle.load(gzip.open(filepath, 'rb'))
-            picklefile = os.path.join(global_dir, "%s.pickle" % sample.name) 
+            picklefile = os.path.join(sampling_dir, "%s.pickle" % sample.name) 
             self.addChildTarget(libsample.SampleAnalysis(sample, picklefile,
                                             libsample.sampling, opts.sampling))
         if opts.normalize:
-            self.setFollowOnTarget(Normalize(global_dir, opts))
+            self.setFollowOnTarget(Normalize(sampling_dir, opts))
         else:
-            self.setFollowOnTarget(Analyses(global_dir, opts))
+            self.setFollowOnTarget(Analyses(sampling_dir, opts))
 
 class Normalize(Target):
     '''Normalize clones' sizes and continue to analyses
@@ -208,14 +214,17 @@ class Normalize(Target):
     def run(self):
         opts = self.options
         global_dir = self.getGlobalTempDir()
+        norm_dir = os.path.join(global_dir, "normalized")
+        system("mkdir -p %s" % norm_dir)
+
         samples = libcommon.load_pickledir(self.sampledir)
         sizetype = 'count'
         norm_matrix = normalize.normalize_MRexp(samples, sizetype)
         samples = normalize.matrix_to_normcount(norm_matrix, samples)
         for s in samples:
-            outfile = os.path.join(global_dir, "%s.pickle" % s.name)
+            outfile = os.path.join(norm_dir, "%s.pickle" % s.name)
             pickle.dump(s, gzip.open(outfile, "wb"))
-        self.setFollowOnTarget(Analyses(global_dir, opts))
+        self.setFollowOnTarget(Analyses(norm_dir, opts))
 
 class Analyses(Target):
     '''
@@ -279,6 +288,9 @@ def add_options(parser):
 def check_options(parser, options):
     incommon.check_input_options(parser, options)
     diversity.check_rarefaction_options(parser, options)
+    similarity.check_similarity_options(options)
+    #clonesize.check_clonesize_options(parser, options)
+    trackclone.check_track_clone_options(parser, options)
 
 def main():
     parser = libcommon.init_options()

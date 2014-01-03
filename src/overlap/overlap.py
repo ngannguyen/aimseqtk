@@ -30,10 +30,12 @@ import aimseqtk.lib.statcommon as statcommon
 
 def add_overlap_options(parser):
     group = OptionGroup(parser, "Group_dominant_clones options")
-    group.add_option('--min_in_group', dest='ingroup', default='1.0',
+    group.add_option('--min_in_group', dest='ingroup', default=1.0,
+                     type='float',
                      help=('Minimum proportion of in_group samples. ' +
                            'Default=%default. Ranges from 0.0 to 1.0'))
-    group.add_option('--max_out_group', dest='outgroup', default='0.0',
+    group.add_option('--max_out_group', dest='outgroup', default=0.0,
+                     type='float',
                      help=('Max proportion of out_group samples. ' +
                            'Default=%default. Ranges from 0.0 to 1.0'))
     parser.add_option_group(group)
@@ -73,7 +75,7 @@ class OverlapPairGroups(Target):
         self.g2 = g2
         self.major_clones = major_clones
         self.names2 = names2
-        self.clone2name2size = clone2name2size
+        self.clone2name2size = clone2name
         self.outdir = outdir
         self.opts = opts
 
@@ -85,7 +87,7 @@ class OverlapPairGroups(Target):
         f.write("#Clone\tFreq1\tFreq2\tOdd_ratio\tp_value\n")
         
         for clone, portion in self.major_clones.iteritems():
-            present2 = clone_group_freq(clone2name2size, names, clone)
+            present2 = clone_group_freq(self.clone2name2size, self.names2, clone)
             if present2 <= self.opts.outgroup:
                 present1 = self.major_clones[clone]
                 absent1 = 1.0 - present1
@@ -106,11 +108,12 @@ class OverlapPairGroups(Target):
 class OverlapAllPairGroups(StatAnalyses):
     '''Set up pairwise group analyses
     '''
-    def __init__(self, indir, outdir, opts):
+    def __init__(self, indir, outdir, opts, c2n2s):
         StatAnalyses.__init__(self, indir, outdir, opts)
-        self.clone2name2size = self.args[0]
+        self.clone2name2size = c2n2s
 
     def run(self):
+        self.load_indir()
         g2n = self.opts.group2samples
         if g2n and len(g2n) >= 2:
             groups = g2n.keys()
@@ -155,12 +158,15 @@ class Overlap(Analysis):
         g2n = self.opts.group2samples
         if g2n and len(g2n) >= 2:
             global_dir = self.getGlobalTempDir()
+            o_dir = os.path.join(global_dir, "overlap_%s" %
+                                     os.path.basename(self.outdir.rstrip('/')))
+            system("mkdir -p %s" % o_dir)
             for group, names in g2n.iteritems():  # get major & minor clones
-                groupfile = os.path.join(global_dir, group)  # pickle file
+                groupfile = os.path.join(o_dir, "%s.pickle" % group)  # pickle file
                 self.addChildTarget(GroupClones(names, groupfile,
                                          clone2sample2size, self.opts.ingroup))
-            self.setFollowOnTarget(OverlapAllPairGroups(global_dir,
-                               self.outdir, self.opts, self.clone2sample2size))
+            self.setFollowOnTarget(OverlapAllPairGroups(o_dir,
+                               self.outdir, self.opts, clone2sample2size))
 
 
 

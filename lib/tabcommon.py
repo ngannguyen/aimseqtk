@@ -13,19 +13,20 @@ def table_text_tab(f, objs, colfields):
     for (name, obj) in objs:
         f.write("%s" % name)
         for attr in colfields:
-            if attr not in obj.getitems():
+            if not obj or attr not in obj.getitems():
                 f.write("\tNA")
             else:
                 f.write("\t%.3f" % obj[attr])
                 stdattr = "%s_std" % attr
                 if stdattr in obj.getitems():
                     std = obj[stdattr]
-                    f.write(" +/- %.3f" % std)
+                    if std:
+                        f.write(" +/- %.3f" % std)
         f.write("\n")
 
 def table_text_tab_list(f, objs, listattr):
     for (name, obj) in objs:
-        if listattr in obj:
+        if obj and listattr in obj.getitems():
             vals = ["%.3f" % v for v in obj[listattr]]
             f.write("%s\t%s\n" % (name, "\t".join(vals)))
 
@@ -43,20 +44,21 @@ def table_latex_tab(f, objs, colfields):
     for (name, obj) in objs:
         f.write("%s" % name.replace('_', '\_'))
         for attr in colfields:
-            if attr not in obj.getitems():
+            if not obj or attr not in obj.getitems():
                 f.write(" & NA")
             else:
                 f.write(" & %.3f" % obj[attr])
                 stdattr = "%s_std" % attr
                 if stdattr in obj.getitems():
                     std = obj[stdattr]
-                    f.write(" $\pm$ %.3f" % std)
+                    if std:
+                        f.write(" $\pm$ %.3f" % std)
         f.write("\\\\\n")
         f.write("\\hline\n")
 
 def table_latex_tab_list(f, objs, listattr):
     for (name, obj) in objs:
-        if listattr in obj.getitems():
+        if obj and listattr in obj.getitems():
             f.write("%s & " % name.replace('_', '\_'))
             vals = ["%.3f" % v for v in obj[listattr]]
             f.write(" & ".join(vals))
@@ -90,13 +92,14 @@ def table(name2obj, outfile, colfields, group2avr={}, group2names={},
     if islist or keyattr not in colfields:
         listattr = keyattr
     else:
-        keyfunc = lambda item: item[keyattr]
+        keyfunc = lambda item: item[0][keyattr]
     
     if group2avr:
         sortedobjs = libcommon.sort_objs_by_group(name2obj, group2names,
                                            True, group2avr, keyfunc=keyfunc)
     else:
         sortedobjs = libcommon.sort_dict_by_value(name2obj, keyfunc=keyfunc)
+
     if tex:
         table_latex(sortedobjs, outfile, colfields, caption, label, listattr)
     else:

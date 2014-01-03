@@ -298,9 +298,10 @@ class DiversityRarefaction(Target):
 
     def run(self):
         global_dir = self.getGlobalTempDir()
-        outdir = os.path.join(global_dir, "diversity")
+        rf_dir = os.path.join(global_dir, 'rf')
+        outdir = os.path.join(rf_dir, "diversity")
         system("mkdir -p %s" % outdir)
-        avrdir = os.path.join(global_dir, "diversity_avr")
+        avrdir = os.path.join(rf_dir, "diversity_avr")
         system("mkdir -p %s" % avrdir)
 
         bin = self.options.bin
@@ -336,7 +337,7 @@ class DiversityTtest(Target):
         picklefile = os.path.join(self.outdir, "%s.pickle" % self.index)
         pickle.dump((p2stat, g2mean), gzip.open(picklefile, 'wb'))
         if self.plotfmt:
-            plotfile = os.path.join(plotdir, self.index)
+            plotfile = os.path.join(self.plotdir, self.index)
             dvplot.draw_diversity_plot(self.g2n, self.name2stat, self.index,
                                        plotfile, self.plotfmt)
 
@@ -350,6 +351,7 @@ class DiversityTtestSummary(StatAnalyses):
         StatAnalyses.__init__(self, indir, outdir)
 
     def run(self):
+        self.load_indir()
         index2obj = self.name2obj
         txtfile = os.path.join(self.outdir, "diversity_ttests.txt")
         diversity_ttest_text(index2obj, txtfile)
@@ -365,6 +367,7 @@ class DiversitySummary(StatAnalyses):
         self.plotfmt = plotfmt
 
     def run(self):
+        self.load_indir()
         name2sampling = self.name2obj
         # Print out summary table
         g2s = self.group2samples
@@ -381,7 +384,8 @@ class DiversitySummary(StatAnalyses):
         if g2s and len(g2s) >= 2:
             outdir = os.path.join(self.outdir, "group_comparisons")
             system("mkdir -p %s" % outdir)
-            global_dir = self.getGlobalTempDir()
+            global_dir = os.path.join(self.getGlobalTempDir(), "ttests")
+            system("mkdir -p %s" % global_dir)
             for index in self.indices:
                 self.addChildTarget(DiversityTtest(global_dir, index, g2s,
                             name2sampling, self.matched, self.plotfmt, outdir))
@@ -405,10 +409,13 @@ class Diversity(Analysis):
     def run(self):
         size = None  # no sampling
         global_dir = self.getGlobalTempDir()
+        d_dir = os.path.join(global_dir, "diversity_%s" %
+                                    os.path.basename(self.outdir.rstrip('/')))
+        system("mkdir -p %s" % d_dir)
         for sample in self.samples:
-            outfile = os.path.join(global_dir, "%s.pickle" % sample)
-            self.addChildTarget(libsample.SampleAnalysis(self.sample, outfile,
+            outfile = os.path.join(d_dir, "%s.pickle" % sample.name)
+            self.addChildTarget(libsample.SampleAnalysis(sample, outfile,
                                sample_sampling_diversity, size, self.indices))
-        self.setFollowOnTarget(DiversitySummary(global_dir, self.outdir,
+        self.setFollowOnTarget(DiversitySummary(d_dir, self.outdir,
                 self.indices, self.group2samples, self.matched, self.plotfmt))
 

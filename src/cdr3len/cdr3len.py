@@ -44,7 +44,7 @@ class LenDistStat(SampleStat):
         readvec = statcommon.sizedict_to_vec(self.len2reads, True)
         self.median_reads = median(readvec)
 
-def sample_lendist_stat(sample):
+def sample_lendist_stat(sample, args=None):
     # lendist with counts and with number of clones
     len2clones = {}
     len2reads = {}
@@ -106,11 +106,12 @@ class LenDistAnalyses(StatAnalyses):
 
     def run(self):
         #name2obj = libcommon.load_pickledir_to_dict(self.indir)
+        self.load_indir()
         name2obj = self.name2obj
         attrs = ['clones', 'reads'] 
         plotfmt = self.opts.plotformat
         for attr in attrs:
-            plotfile = os.path.join(self.outdir, "%s.%s" % (attr, plotfmt))
+            plotfile = os.path.join(self.outdir, "%s" % attr)
             ldplot.draw_lendist(name2obj, attr, plotfile, plotfmt,
                                       self.opts.dpi)
             # ttests
@@ -130,9 +131,12 @@ class LenDist(Analysis):
     def run(self):
         opts = self.opts
         global_dir = self.getGlobalTempDir()
+        ld_dir = os.path.join(global_dir, "lendist_%s" %
+                                     os.path.basename(self.outdir.rstrip('/')))
+        system("mkdir -p %s" % ld_dir)
         for sample in self.samples:
-            outfile = os.path.join(global_dir, "%s.pickle" % sample.name)
+            outfile = os.path.join(ld_dir, "%s.pickle" % sample.name)
             self.addChildTarget(libsample.SampleAnalysis(sample, outfile,
                                                           sample_lendist_stat))
-        self.setFollowOnTarget(LenDistAnalyses(global_dir, self.outdir, opts))
+        self.setFollowOnTarget(LenDistAnalyses(ld_dir, self.outdir, opts))
 

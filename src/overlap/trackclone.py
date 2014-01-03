@@ -161,6 +161,7 @@ class TrackClonesAgg(StatAnalyses):
         StatAnalyses.__init__(self, indir, outdir, opts)
     
     def run(self):
+        self.load_indir()
         n2o = self.name2obj
         outfile = os.path.join(self.outdir, "trackclones.txt")
         tab_track_clones(n2o, opts.groups, outfile)
@@ -200,11 +201,14 @@ class TrackClones(Analysis):
         opts = self.opts
         sample2group = libcommon.get_val2key_1to1(opts.group2samples)
         global_dir = self.getGlobalTempDir()
+        tc_dir = os.path.join(global_dir, "trackclone_%s" %
+                                     os.path.basename(self.outdir.rstrip('/')))
+        system("mkdir -p %s" % tc_dir)
         for clone in self.clones:
-            outfile = os.path.join(global_dir, "%s.pickle" % clone)
+            outfile = os.path.join(tc_dir, "%s.pickle" % clone)
             self.addChildTarget(TrackClone(clone, self.samples, outfile, opts,
                                            sample2group))
-        self.setFollowOnTarget(TrackClonesAgg(global_dir, self.outdir, opts))
+        self.setFollowOnTarget(TrackClonesAgg(tc_dir, self.outdir, opts))
 
 class TrackTopClones(TrackClones):
     '''Set up children jobs to track top clones

@@ -25,6 +25,7 @@ def draw_diversity_plot(group2names, name2obj, attr, outfile, outfmt='pdf',
     fig, pdf = drawcommon.init_image(w, h, outfmt, outfile, dpi)
     axes = drawcommon.set_axes(fig)
     
+    xdata = range(1, len(group2names) + 1)
     xlabels = sorted(group2names.keys())
     data = []
     for group in xlabels:
@@ -33,12 +34,13 @@ def draw_diversity_plot(group2names, name2obj, attr, outfile, outfmt='pdf',
         data.append(vec)
     axes.boxplot(data)
     drawcommon.edit_spine(axes)
+    axes.xaxis.set_ticks(xdata)
     axes.xaxis.set_ticklabels(xlabels)
     # Labeling:
     #axes.set_title("%s" % attr.title(), size='xx-large', weight='bold')
     axes.set_xlabel("Group", size='x-large', weight='bold')
     axes.set_ylabel(attr.title(), size='x-large', weight='bold')
-    pytplot.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
+    axes.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
     
     drawcommon.write_image(fig, pdf, outfmt, outfile, dpi)
 

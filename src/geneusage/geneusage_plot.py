@@ -60,10 +60,11 @@ def draw_gene_usage(name2obj, attr, type, outbase, genes, opts):
     legend._drawFrame = False
 
     drawcommon.edit_spine(axes)
+    axes.xaxis.set_ticks(xdata)
     axes.xaxis.set_ticklabels(genes)
     axes.set_xlabel("Gene", size='x-large', weight='bold')
-    axes.set_ylabel("% of total %s" % attr, size='x-large', weight='bold')
-    drawcommon.write_image(fig, pdf, outformat, outbase, dpi) 
+    axes.set_ylabel("%% of total %s" % attr, size='x-large', weight='bold')
+    drawcommon.write_image(fig, pdf, opts.plotformat, outbase, opts.dpi) 
     
 class GeneUsagePlot(Target):
     '''
@@ -79,8 +80,8 @@ class GeneUsagePlot(Target):
 
     def run(self):
         if len(self.type) == 1:
-            draw_gene_usage(self.name2obj, self.attr, self.type, self.genes,
-                            self.outbase, self.opts)
+            draw_gene_usage(self.name2obj, self.attr, self.type, self.outbase,
+                            self.genes, self.opts)
         #else:  # draw matrix
         #    draw_combination_usage(self.name2obj, self.attr, self.type,
         #                           self.outbase, self.opts)

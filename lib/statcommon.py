@@ -148,11 +148,13 @@ def group_vector(names, name2obj, attr=None, func=None, func_args=None):
     for n in names:
         obj = name2obj[n]
         if attr:
-            vec.append(obj[attr])
+            val = obj[attr]
         elif func:
-            vec.append(func(obj, func_args))
+            val = func(obj, func_args)
         else:
-            vec.append(obj)
+            val = obj
+        if val:
+            vec.append(val)
     return vec
 
 def pair_matrix(rnames, cnames, pair2obj, attr=None, sep="_", func=None, args=None):
@@ -192,14 +194,18 @@ def pair_vec(names1, names2, pair2stat, attr):
                 continue
             pair = "%s_%s" % (n1, n2)
             pair_rv = "%s_%s" % (n2, n1)
+
             if pair in visited or pair_rv in visited:
                 continue
             obj = None
+            
             if pair in pair2stat:
                 obj = pair2stat[pair]
-            elif pair_rv in pair2stat[pair_rv]:
+            elif pair_rv in pair2stat:
                 obj = pair2stat[pair_rv]
             if obj:
+                if attr not in obj.getitems():
+                    raise KeyError("Obj %s does not have attr %s" % (obj.name, attr))
                 vec.append(obj[attr])
                 visited.append(pair)
     return vec
@@ -225,7 +231,11 @@ def ttest_allpairs(group2names, name2obj, matched, attr=None, func=None,
             if i2 == len(groups) - 1:
                 group2mean[g2] = (np.mean(vec2), np.std(vec2))
             pair = "%s_%s" % (g1, g2)
-            tval, pval = ttest(vec1, vec2)
+            if vec1 and vec2:
+                tval, pval = ttest(vec1, vec2)
+            else:
+                tval = 2  # temporary...
+                pval = 2
             pair2stats[pair] = (tval, pval)
     return pair2stats, group2mean
 

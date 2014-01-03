@@ -124,7 +124,7 @@ class SimilarityHeatmap(Target):
         tabcommon.matrix_table(self.names, rows, tabfile)
         # Make heatmap
         plotfile = "%s.pdf" % self.outbase
-        drawcommon.draw_heatmap(names, names, rows, plotfile)
+        drawcommon.draw_heatmap(self.names, self.names, rows, plotfile)
 
 def table_group_pairwise_similarity(g1, g2, vec11, vec12, vec22, outfile):
     mean_11, std_11 = statcommon.vec_mean_std(vec11)
@@ -136,7 +136,7 @@ def table_group_pairwise_similarity(g1, g2, vec11, vec12, vec22, outfile):
     # Compare 11 and 12
     f.write("%s, %s_%s\t" % (g1, g1, g2))
     t_11_12, p_11_12 = statcommon.ttest_pair(vec11, vec12) 
-    f.write("%.2e\t%.2e\t%.2e +/- %.2e\t%.2e +/- %.2e\n" % (t_11_12, v_11_12,
+    f.write("%.2e\t%.2e\t%.2e +/- %.2e\t%.2e +/- %.2e\n" % (t_11_12, p_11_12,
                                             mean_11, std_11, mean_12, std_12))
     # Compare 12 and 22
     f.write("%s_%s, %s\t" % (g1, g2, g2))
@@ -173,7 +173,7 @@ class SimilarityPairGroups(Target):
                                         self.pair2stat, self.attr)
         # draw boxplots
         plotfmt = self.opts.plotformat
-        plotfile = "%s.%s" % (self.outbase, plotfmt)
+        plotfile = "%s" % self.outbase
         simiplot.draw_group_pairwise_similarity(self.g1, self.g2, vec11,
                            vec12, vec22, plotfile, plotfmt, self.opts.dpi)
         # ttests 
@@ -190,6 +190,7 @@ class SimilarityAnalyses(StatAnalyses):
         self.names = samplenames
 
     def run(self):
+        self.load_indir()
         opts = self.opts
         pair2stat = self.name2obj
         outdir = os.path.join(self.outdir, "similarity")
@@ -246,20 +247,23 @@ class Similarity(Analysis):
         Analysis.__init__(self, samples, outdir, options)
 
     def run(self):
-        opts = self.options
+        opts = self.opts
         global_dir = self.getGlobalTempDir()
+        s_dir = os.path.join(global_dir, "similarity_%s" %
+                                     os.path.basename(self.outdir.rstrip('/')))
+        system("mkdir -p %s" % s_dir)
         numsam = len(self.samples)
-        if len(numsam) < 2:
+        if numsam < 2:
             return
         for i1 in xrange(numsam - 1):
             sam1 = self.samples[i1]
             for i2 in xrange(i1 + 1, numsam):
                 sam2 = self.samples[i2]
-                outfile = os.path.join(global_dir, "%s_%s.pickle" %
+                outfile = os.path.join(s_dir, "%s_%s.pickle" %
                                                         (sam1.name, sam2.name))
                 self.addChildTarget(PairSimilarity(sam1, sam2, outfile, opts))
         names = [s.name for s in self.samples]
-        self.setFollowOnTarget(SimilarityAnalyses(names, global_dir,
+        self.setFollowOnTarget(SimilarityAnalyses(names, s_dir,
                                                   self.outdir, opts))
         
 

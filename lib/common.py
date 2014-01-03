@@ -10,6 +10,7 @@ import os
 import sys
 import copy
 import numbers
+import gzip
 import cPickle as pickle
 from optparse import OptionParser
 
@@ -34,10 +35,15 @@ def get_pc(myval, total):
 def sort_dict_by_value(mydict, keyfunc=None):
     # Return a list of tuples
     items = [(v, k) for k, v in mydict.items()]
+    present_items = []
+    for (v, k) in items:
+        if v is not None:
+            present_items.append((v, k))
+
     if keyfunc is None:
-        items = sorted(items, reverse=True)
+        items = sorted(present_items, reverse=True)
     else:
-        items = sorted(items, reverse=True, key=keyfunc)
+        items = sorted(present_items, reverse=True, key=keyfunc)
     return [(k, v) for v, k in items] 
 
 def sort_objs_by_group(name2obj, group2names, addgroup, group2avr,
@@ -47,7 +53,13 @@ def sort_objs_by_group(name2obj, group2names, addgroup, group2avr,
     sorted_items = []
     for group in sorted(group2names.keys()):
         gnames = group2names[group]
-        gname2obj = dict((n, name2obj[n]) for n in gnames)
+        present_names = []
+        for gn in gnames:
+            if gn in name2obj:
+                present_names.append(gn)
+
+        gname2obj = dict((n, name2obj[n]) for n in present_names)
+        
         gsorted_items = sort_dict_by_value(gname2obj, keyfunc=keyfunc)
         sorted_items.extend(gsorted_items)
         if addgroup:
@@ -60,6 +72,8 @@ def get_group_avr(name2obj, group2names):
     # for each group, return an ojb whose attributes are average of the
     # group member objs attributes. Note: obj must have func "getitems",
     # which return the obj attributes, defined
+    # If 0 group member is present, return None
+    # Note: avr is only the avr of present members
     group2avr = {}
     if not group2names:
         return group2avr
@@ -67,7 +81,19 @@ def get_group_avr(name2obj, group2names):
     for group, names in group2names.iteritems():
         assert len(names) > 0
         avrname = "%s_Avr" % group
-        avrobj = copy.copy(name2obj[names[0]]) 
+        
+        # check to see how many group members are present
+        present_names = []
+        for name in names:  # each member
+            if name in name2obj:
+                present_names.append(name)
+        group_size = len(present_names)
+        if group_size == 0:
+            group2avr[group] = (avrname, None)
+            continue
+        
+        avrobj = copy.copy(name2obj[present_names[0]]) 
+        
         # Reset the avrobj:
         for attr in avrobj.getitems():
             val = avrobj[attr]
@@ -93,8 +119,7 @@ def get_group_avr(name2obj, group2names):
                 avrobj.__setitem__(attr, None)
 
         # Update all the numeric attributes
-        for name in names:  # each member
-            assert name in name2obj
+        for name in present_names:  # each member
             obj = name2obj[name]
             for attr in obj.getitems():
                 val = obj[attr]
@@ -111,13 +136,13 @@ def get_group_avr(name2obj, group2names):
         for attr in avrobj.getitems():
             val = avrobj[attr]
             if isinstance(val, numbers.Number):
-                avrval = val/len(names)
+                avrval = val/len(present_names)
                 avrobj.__setitem__(attr, avrval)
             elif isinstance(val, list):
                 if len(val) > 0:
                     for i, vitem in enumerate(val):
                         if isinstance(vitem, numbers.Number):
-                            avrvitem = vitem/len(names)
+                            avrvitem = vitem/len(present_names)
                             avrobj[attr][i] = avrvitem
 
         group2avr[group] = (avrname, avrobj)
@@ -135,7 +160,7 @@ def load_pickledir_to_dict(pickledir):
     name2obj = {}
     for file in os.listdir(pickledir):
         filepath = os.path.join(pickledir, file)
-        name = file.splitext()[0]
+        name = os.path.splitext(file)[0]
         obj = pickle.load(gzip.open(filepath, "rb"))
         name2obj[name] = obj
     return name2obj
@@ -269,7 +294,10 @@ class StatAnalyses(Target):
         self.outdir = outdir
         self.opts = opts
         self.args = args
-        self.name2obj = load_pickledir_to_dict(indir)
+        self.name2obj = None
+        
+    def load_indir(self):
+        self.name2obj = load_pickledir_to_dict(self.indir)
 
 #============ LATEX related function ============
 def pretty_int(number):
