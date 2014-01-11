@@ -45,16 +45,24 @@ class SimilarityStat(statcommon.PairStat):
         self.chao = None
         self.horn = None
 
-def pair_similarity(sample1, sample2, attrs, sizetype):
-    # sizetype can be [count, normcount, freq]
-    samples = [sample1, sample2]
-    clone2sample2size = statcommon.get_clone2samples(samples, sizetype)
-    total = len(clone2sample2size)
+def extract_c2n2s(names, c2n2s_dir):
+    c2n2s_pair = {}  # clones that are present in >=1 sample in "names"
+    for v in os.listdir(c2n2s_dir):
+        c2n_file = os.path.join(c2n2s_dir, v)
+        c2n2s = pickle.load(gzip.open(c2n_file, 'rb'))
+        for c, n2s in c2n2s.iteritems():
+            n2s_pair = {n: n2s[n] for n in names if n in n2s}
+            if n2s_pair:
+                c2n2s_pair[c] = n2s_pair
+    return c2n2s_pair
+    
+def pair_similarity(sample1, sample2, c2n2s, attrs):
+    total = len(c2n2s)
     # get count vectors:
     vec1 = []
     vec2 = []
     numshare = 0
-    for clone, sample2size in clone2sample2size.iteritems():
+    for clone, sample2size in c2n2s.iteritems():
         v1 = 0.0
         if sample1.name in sample2size:
             v1 = sample2size[sample1.name]
@@ -123,8 +131,9 @@ class SimilarityHeatmap(Target):
         tabfile = "%s.txt" % self.outbase
         tabcommon.matrix_table(self.names, rows, tabfile)
         # Make heatmap
-        plotfile = "%s.pdf" % self.outbase
-        drawcommon.draw_heatmap(self.names, self.names, rows, plotfile)
+        if self.opts.makeplots:
+            plotfile = "%s.pdf" % self.outbase
+            drawcommon.draw_heatmap(self.names, self.names, rows, plotfile)
 
 def table_group_pairwise_similarity(g1, g2, vec11, vec12, vec22, outfile):
     mean_11, std_11 = statcommon.vec_mean_std(vec11)
@@ -136,17 +145,17 @@ def table_group_pairwise_similarity(g1, g2, vec11, vec12, vec22, outfile):
     # Compare 11 and 12
     f.write("%s, %s_%s\t" % (g1, g1, g2))
     t_11_12, p_11_12 = statcommon.ttest_pair(vec11, vec12) 
-    f.write("%.2e\t%.2e\t%.2e +/- %.2e\t%.2e +/- %.2e\n" % (t_11_12, p_11_12,
+    f.write("%.3f\t%.3f\t%.3f +/- %.3f\t%.3f +/- %.3f\n" % (t_11_12, p_11_12,
                                             mean_11, std_11, mean_12, std_12))
     # Compare 12 and 22
     f.write("%s_%s, %s\t" % (g1, g2, g2))
     t_12_22, p_12_22 = statcommon.ttest_pair(vec12, vec22) 
-    f.write("%.2e\t%.2e\t%.2e +/- %.2e\t%.2e +/- %.2e\n" % (t_12_22, p_12_22,
+    f.write("%.3f\t%.3f\t%.3f +/- %.3f\t%.3f +/- %.3f\n" % (t_12_22, p_12_22,
                                             mean_12, std_12, mean_22, std_22))
     # Compare 11 and 22
     f.write("%s, %s\t" % (g1, g2))
     t_11_22, p_11_22 = statcommon.ttest_pair(vec11, vec22) 
-    f.write("%.2e\t%.2e\t%.2e +/- %.2e\t%.2e +/- %.2e\n" % (t_11_22, p_11_22,
+    f.write("%.3f\t%.3f\t%.3f +/- %.3f\t%.3f +/- %.3f\n" % (t_11_22, p_11_22,
                                             mean_11, std_11, mean_22, std_22))
     f.close()
 
@@ -190,6 +199,7 @@ class SimilarityAnalyses(StatAnalyses):
         self.names = samplenames
 
     def run(self):
+        self.logToMaster("SimilarityAnalyses\n")
         self.load_indir()
         opts = self.opts
         pair2stat = self.name2obj
@@ -219,51 +229,80 @@ class SimilarityAnalyses(StatAnalyses):
                         out = os.path.join(cmpdir, "%s_%s_%s" % (g1, g2, attr))
                         self.addChildTarget(SimilarityPairGroups(pair2stat,
                                       g1, names1, g2, names2, attr, out, opts))
+        self.setFollowOnTarget(libcommon.CleanupDir(self.indir))
 
 class PairSimilarity(Target):
     '''Compute similarity indices for a specific pair of sample
     Pickle the outputs to outfile
     '''
-    def __init__(self, sample1, sample2, outfile, opts):
+    def __init__(self, sample1, sample2, c2n2s_dir, outfile, opts):
         Target.__init__(self)
-        self.sam1 = sample1
-        self.sam2 = sample2
+        self.sample1 = sample1
+        self.sample2 = sample2
+        self.c2n2s_dir = c2n2s_dir
         self.outfile = outfile
         self.opts = opts
 
     def run(self):
-        sizetype = 'count'
-        if self.opts.normalize:
-            sizetype = 'normcount'
-        stat = pair_similarity(self.sam1, self.sam2, self.opts.similarity,
-                                                                      sizetype)
-        pickle.dump(stat, gzip.open(self.outfile, 'wb')) 
+        self.logToMaster("PairSimilarity\n")
+        n1 = self.sample1.name
+        n2 = self.sample2.name
+        c2n2s_pair = extract_c2n2s([n1, n2], self.c2n2s_dir)
+        stat = pair_similarity(self.sample1, self.sample2, c2n2s_pair,
+                               self.opts.similarity)
+        pickle.dump(stat, gzip.open(self.outfile, 'wb'))
 
-class Similarity(Analysis):
-    ''' Set up children jobs to compute similarity indices for each pair
-    of samples
-    '''
-    def __init__(self, samples, outdir, options):
-        Analysis.__init__(self, samples, outdir, options)
+class Similarity2(Target):
+    def __init__(self, c2n2s_dir, sams, indir, outdir, opts):
+        Target.__init__(self)
+        self.c2n2s_dir = c2n2s_dir
+        self.sams = sams
+        self.outdir = outdir
+        self.indir = indir
+        self.opts = opts
 
     def run(self):
-        opts = self.opts
         global_dir = self.getGlobalTempDir()
         s_dir = os.path.join(global_dir, "similarity_%s" %
                                      os.path.basename(self.outdir.rstrip('/')))
         system("mkdir -p %s" % s_dir)
-        numsam = len(self.samples)
+        numsam = len(self.sams)
+        for i1 in xrange(numsam - 1):
+            sam1 = self.sams[i1]
+            sam1_file = os.path.join(self.indir, sam1, sam1)
+            sample1 = pickle.load(gzip.open(sam1_file, 'rb'))
+            for i2 in xrange(i1 + 1, numsam):
+                sam2 = self.sams[i2]
+                sam2_file = os.path.join(self.indir, sam2, sam2)
+                sample2 = pickle.load(gzip.open(sam2_file, 'rb'))
+                outfile = os.path.join(s_dir, "%s_%s.pickle" % (sam1, sam2))
+                self.addChildTarget(PairSimilarity(sample1, sample2,
+                                                   self.c2n2s_dir,
+                                                   outfile, self.opts))
+        self.setFollowOnTarget(SimilarityAnalyses(self.sams, s_dir,
+                                                  self.outdir, self.opts))
+        
+class Similarity(Analysis):
+    ''' Set up children jobs to compute similarity indices for each pair
+    of samples
+    '''
+    def __init__(self, indir, outdir, opts):
+        Analysis.__init__(self, indir, outdir, opts)
+
+    def run(self):
+        self.logToMaster("Similarity\n")
+        sams = os.listdir(self.indir)
+        numsam = len(sams)
         if numsam < 2:
             return
-        for i1 in xrange(numsam - 1):
-            sam1 = self.samples[i1]
-            for i2 in xrange(i1 + 1, numsam):
-                sam2 = self.samples[i2]
-                outfile = os.path.join(s_dir, "%s_%s.pickle" %
-                                                        (sam1.name, sam2.name))
-                self.addChildTarget(PairSimilarity(sam1, sam2, outfile, opts))
-        names = [s.name for s in self.samples]
-        self.setFollowOnTarget(SimilarityAnalyses(names, s_dir,
-                                                  self.outdir, opts))
-        
+        workdir = "similarity_temp"
+        system("mkdir -p %s" % workdir)
+        sizetype = 'count'
+        if self.opts.normalize:
+            sizetype = 'normcount'
+        self.addChildTarget(statcommon.GetClone2Samples(self.indir, workdir,
+                                                        sizetype))
+        self.setFollowOnTarget(Similarity2(workdir, sams, self.indir,
+                                           self.outdir, self.opts))
+
 

@@ -16,17 +16,17 @@ import sys
 import aimseqtk.lib.drawcommon as drawcommon
 
 
-def draw_rarefaction(name2size2sampling, name2sample, groups, index, outfile,
+def draw_rarefaction(name2size2sampling, groups, index, outfile,
                      outformat='pdf', dpi=300):
     # xaxis: sampling size; yaxis: index value +- std
-    width = 10.0
-    height = 8.0
-    fig, pdf = drawcommon.init_image(width, height, outformat, outfile, dpi)
-    axes = drawcommon.set_axes(fig)
-    
+    axes, fig, pdf = drawcommon.get_axes(outfile=outfile, outfmt=outformat,
+                                                                       dpi=dpi)
+
     lines = []
     linenames = []
     for name, size2sampling in name2size2sampling.iteritems():
+        if not size2sampling:
+            continue
         xdata = sorted(size2sampling.keys())
         ydata = []
         stddata = []
@@ -38,37 +38,31 @@ def draw_rarefaction(name2size2sampling, name2sample, groups, index, outfile,
             if stdindex in sampling.getitems():
                 std = sampling[stdindex]
                 stddata.append(std)
-
-        sample = name2sample[name]
+        sampling0 = size2sampling[xdata[0]]
+        color = sampling0.color
+        marker = sampling0.marker
         if stddata:
-            axes.errorbar(xdata, ydata, yerr=stddata, color=sample.color,
-                          markeredgecolor=sample.color, fmt='.')
-        line, = axes.plot(xdata, ydata, color=sample.color, mec=sample.color,
-                         marker=sample.marker, linestyle='-')
+            axes.errorbar(xdata, ydata, yerr=stddata, color=color,
+                          markeredgecolor=color, fmt='.')
+        line, = axes.plot(xdata, ydata, color=color, mec=color,
+                         marker=marker, linestyle='-')
         if not groups:
             lines.append(line)
-            linenames.append(sample.name)
+            linenames.append(sampling0.name)
         else:
-            if sample.group not in linenames:
+            if sampling0.group not in linenames:
                 lines.append(line)
-                linenames.append(sample.group)
+                linenames.append(sampling0.group)
     
-    axes.xaxis.grid(b=True, color='#3F3F3F', linestyle='-', linewidth=0.05)
-    axes.yaxis.grid(b=True, color='#3F3F3F', linestyle='-', linewidth=0.05)
-    
-    legend = axes.legend(lines, linenames, numpoints=1, loc='best', ncol=1)
-    legend._drawFrame = False
-    
+    drawcommon.set_grid(axes)
+    drawcommon.set_legend(axes, lines, linenames) 
     drawcommon.edit_spine(axes)
     # Labeling:
-    axes.set_title("%s Rarefaction Curve" % index.title(), size='xx-large', 
-                   weight='bold')
-    axes.set_xlabel("Sampling size (number of sequences)", size='x-large',
-                   weight='bold')
-    axes.set_ylabel(index.title(), size='x-large', weight='bold')
+    title = "%s Rarefaction Curve" % index.title()
+    xlabel = "Sampling size (number of sequences)"
+    ylabel = index.title()
+    drawcommon.set_labels(axes, title, xlabel, ylabel)
     
-    #pyplot.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
-    #pyplot.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
     axes.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
     axes.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
     

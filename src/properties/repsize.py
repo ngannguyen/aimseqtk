@@ -14,25 +14,6 @@ import aimseqtk.lib.sample as libsample
 import aimseqtk.lib.common as libcommon
 
 
-#def get_group_avr(name2sample, group2names):
-#    group2avr = {}
-#    if not group2names:
-#        return group2avr
-#
-#    for group, names in group2names.iteritems():
-#        assert len(names) > 0
-#        avrname = "%s_Avr" % group
-#        avrsample = libsample.Sample(avrname, group=group)
-#        for name in names:
-#            assert name in name2sample
-#            sample = name2sample[name]
-#            avrsample.size += sample.size
-#            avrsample.numclone += len(sample.clones)
-#        avrsample.size /= len(names)
-#        avrsample.numclone /= len(names)
-#        group2avr[group] = avrsample
-#    return group2avr
-
 def repsize_latex_tab(f, samples, avrnames=[]):
     for (sname, s) in samples:
         shaded = ""
@@ -80,7 +61,6 @@ def repsize_table(name2sample, outfile, group2avr={}, group2names={}, tex=False)
         avrnames = []
         sortedsamples = sorted(name2sample.values(), key=lambda s: s.size,
                                                      reverse=True)
-    
     # Write to output file
     if tex:
         repsize_latex(sortedsamples, outfile, avrnames)

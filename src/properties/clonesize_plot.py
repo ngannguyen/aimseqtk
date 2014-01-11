@@ -47,11 +47,8 @@ def draw_clonesize_dist(name2obj, attr, outfile, outfmt='pdf', dpi=300):
     # attr = numclones/counts/numclones_cumul/counts_cumul/topfreqs/
     #         topfreqs_cumul
     assert len(name2obj) > 0
-    w = 10.0
-    h = 8.0
-    fig, pdf = drawcommon.init_image(w, h, outfmt, outfile, dpi)
-    axes = drawcommon.set_axes(fig)
-
+    axes, fig, pdf = drawcommon.get_axes(outfile=outfile, outfmt=outfmt,
+                                                                      dpi=dpi)
     obj0 = name2obj.values()[0]
     xlabels = [str(x) for x in obj0.freqs]
     if attr == 'topfreqs' or attr == 'topfreqs_cumul':
@@ -64,21 +61,20 @@ def draw_clonesize_dist(name2obj, attr, outfile, outfmt='pdf', dpi=300):
     lines = []
     for name, obj in name2obj.iteritems():
         ydata = obj[attr]
-        line = axes.plot(xdata, ydata, color=obj.color, marker=obj.marker,
+        if len(xdata) != len(ydata):  # HACK
+            continue
+        line, = axes.plot(xdata, ydata, color=obj.color, marker=obj.marker,
                          markeredgecolor=obj.color, linestyle='-')
         lines.append(line)
         linenames.append(obj.name)
 
-    legend = axes.legend(lines, linenames, numpoints=1, loc='best', ncol=1)
-    legend._drawFrame = False
+    drawcommon.set_grid(axes)
+    drawcommon.set_legend(axes, lines, linenames) 
     drawcommon.edit_spine(axes)
-    axes.xaxis.set_ticks(xdata)
-    axes.xaxis.set_ticklabels(xlabels)
+    drawcommon.set_xticks(axes, xdata, xlabels)
     
     labels = cs_get_attr_plot_labels(attr, numtop)
-    axes.set_title(labels[0], size='xx-large', weight='bold')
-    axes.set_xlabel(labels[1], size='x-large', weight='bold')
-    axes.set_ylabel(labels[2], size='x-large', weight='bold')
+    drawcommon.set_labels(axes, labels[0], labels[1], labels[2])
 
     drawcommon.write_image(fig, pdf, outfmt, outfile, dpi) 
 

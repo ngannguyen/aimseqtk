@@ -59,102 +59,164 @@ def group_major_clones(clone2name2size, names, minfreq):
     for clone, name2size in clone2name2size.iteritems():
         clone_names = Set(name2size.keys())
         common_names = group_names.intersection(clone_names)
-        portion = float(len(common_names)) / total
+        numsam = len(common_names)
+        portion = float(numsam) / total
         if portion >= minfreq:
-            majorclones[clone] = portion
+            #majorclones[clone] = portion
+            majorclones[clone] = (numsam, total - numsam)
     return majorclones
+
+class OverlapPairGroupsVj(Target):
+    def __init__(self, vjfile, c2n2s_file, outfile, names2, opts):
+        Target.__init__(self)
+        self.vjfile = vjfile
+        self.c2n2s_file = c2n2s_file
+        self.outfile = outfile
+        self.names2 = names2
+        self.opts = opts
+
+    def run(self):
+        f = open(self.outfile, 'w')
+        mjclones = pickle.load(gzip.open(self.vjfile, 'rb'))
+        for clone, (present1, absent1) in mjclones.iteritems():
+            portion1 = float(present1)/(present1 + absent1)
+            c2n2s = pickle.load(gzip.open(self.c2n2s_file, 'rb'))
+            portion2 = clone_group_freq(c2n2s, self.names2, clone)
+            if portion2 <= self.opts.outgroup:
+                present2 = round(portion2*len(self.names2))
+                absent2 = len(self.names2) - present2
+                tab = [[present1, present2], [absent1, absent2]]
+                oddratio, pval = fisher_exact(tab, alternative='greater')
+                if pval <= self.opts.pval:
+                    p1 = libcommon.pretty_float(portion1)
+                    p2 = libcommon.pretty_float(portion2)
+                    odd = libcommon.pretty_float(oddratio)
+                    p = libcommon.pretty_float(pval)
+                    f.write("%s\t%s\t%s\t%s\t%s\n" % (clone, p1, p2, odd, p))
+                    #f.write("%s\t%.2e\t%.2e\t%.2e\t%.2e\n" % (clone, present1,
+                    #                                 present2, oddratio, pval))
+        f.close()
+        # remove outfile if there is no significant results
+        if os.stat(self.outfile).st_size <= 0:
+            system("rm -f %s" % self.outfile)
+            
+class OverlapPairGroupsAgg(Target):
+    def __init__(self, indir, outfile):
+        Target.__init__(self)
+        self.indir = indir
+        self.outfile = outfile
+
+    def run(self):
+        f = open(self.outfile, 'w')
+        f.write("#Clone\tFreq1\tFreq2\tOdd_ratio\tp_value\n")
+        f.close()
+        for file in os.listdir(self.indir):
+            filepath = os.path.join(self.indir, file)
+            system("cat %s >> %s" % (filepath, self.outfile))
+        self.setFollowOnTarget(libcommon.CleanupDir(self.indir))
 
 class OverlapPairGroups(Target):
     '''Find group_dominant clones of group1
        For each clone, perform fisher exact test
        If matched, track its frequencies over different groups
     '''
-    def __init__(self, g1, g2, major_clones, names2, clone2name, outdir, opts):
+    def __init__(self, g1, g2, mjclones_dir, names2, c2n2s_dir, outdir, opts):
         Target.__init__(self)
         self.g1 = g1
         self.g2 = g2
-        self.major_clones = major_clones
+        self.mjclones_dir = mjclones_dir
         self.names2 = names2
-        self.clone2name2size = clone2name
+        self.c2n2s_dir = c2n2s_dir
         self.outdir = outdir
         self.opts = opts
 
     def run(self):
         pair = "%s_%s" % (self.g1, self.g2)
-        signi_clones = []
+        workdir = os.path.join(self.outdir, pair)
+        system("mkdir -p %s" % workdir)
+        for vj in os.listdir(self.mjclones_dir):
+            vj_file = os.path.join(self.mjclones_dir, vj)
+            c2n2s_file = os.path.join(self.c2n2s_dir, vj)
+            vj_out = os.path.join(workdir, vj)
+            self.addChildTarget(OverlapPairGroupsVj(vj_file, c2n2s_file,
+                                               vj_out, self.names2, self.opts))
         outfile = os.path.join(self.outdir, "%s.txt" % pair)
-        f = open(outfile, 'w')
-        f.write("#Clone\tFreq1\tFreq2\tOdd_ratio\tp_value\n")
+        self.setFollowOnTarget(OverlapPairGroupsAgg(workdir, outfile))
         
-        for clone, portion in self.major_clones.iteritems():
-            present2 = clone_group_freq(self.clone2name2size, self.names2, clone)
-            if present2 <= self.opts.outgroup:
-                present1 = self.major_clones[clone]
-                absent1 = 1.0 - present1
-                absent2 = 1.0 - present2
-                tab = [[present1, present2], [absent1, absent2]] 
-                oddratio, pval = fisher_exact(tab, alternative='greater')
-                if pval <= self.opts.pval:
-                    f.write("%s\t%.2e\t%.2e\t%.2e\t%.2e\n" % (clone, present1,
-                                                     present2, oddratio, pval))
-                signi_clones.append(clone)
-                #if self.opts.matched:
-                #    draw_clone_freq_over_diff_group
-        f.close()
-        # remove outfile if there is no significant results
-        if os.stat(outfile).st_size <= 0:
-            system("rm -f %s" % outfile)
-             
-class OverlapAllPairGroups(StatAnalyses):
+class OverlapAllPairGroups(Analysis):
     '''Set up pairwise group analyses
     '''
-    def __init__(self, indir, outdir, opts, c2n2s):
-        StatAnalyses.__init__(self, indir, outdir, opts)
-        self.clone2name2size = c2n2s
+    def __init__(self, major_clones_dir, outdir, opts, c2n2s_dir):
+        Analysis.__init__(self, major_clones_dir, outdir, opts)
+        self.c2n2s_dir = c2n2s_dir
 
     def run(self):
-        self.load_indir()
         g2n = self.opts.group2samples
         if g2n and len(g2n) >= 2:
             groups = g2n.keys()
             for g1 in groups:
-                names1 = g2n[g1]
-                major_clones = self.name2obj[g1]
+                #major_clones = self.name2obj[g1]
+                g1_major_clones_dir = os.path.join(self.indir, g1) 
                 for g2 in groups:
                     if g2 == g1:
                         continue
                     names2 = g2n[g2]
-                    self.addChildTarget(OverlapPairGroups(g1, g2, major_clones,
-                                                  names2, self.clone2name2size,
+                    self.addChildTarget(OverlapPairGroups(g1, g2,
+                                                  g1_major_clones_dir,
+                                                  names2, self.c2n2s_dir,
                                                   self.outdir, self.opts))
+
+class GroupClonesVj(Target):
+    '''
+    '''
+    def __init__(self, names, outfile, infile, ingroup):
+        Target.__init__(self)
+        self.names = names
+        self.outfile = outfile
+        self.infile = infile
+        self.ingroup = ingroup
+
+    def run(self):
+        c2n2s = pickle.load(gzip.open(self.infile, 'rb'))
+        majorclones = group_major_clones(c2n2s, self.names, self.ingroup)
+        if majorclones:
+            pickle.dump(majorclones, gzip.open(self.outfile, "wb"))
 
 class GroupClones(Target):
     '''Caculate clones that are present in >= ingroup portion of total
     group samples (major_clones) and clones that are present in <=
     outgroup portion of total group samples (minor_clones)
     '''
-    def __init__(self, names, outfile, clone2name2size, ingroup):
+    #def __init__(self, names, outfile, clone2name2size, ingroup):
+    def __init__(self, names, outdir, c2n2s_dir, ingroup):
         Target.__init__(self)
         self.names = names
-        self.outfile = outfile
-        self.clone2name2size = clone2name2size
+        self.outdir = outdir
+        #self.clone2name2size = clone2name2size
+        self.c2n2s_dir = c2n2s_dir
         self.ingroup = ingroup
 
     def run(self):
-        majorclones = group_major_clones(self.clone2name2size, self.names,
-                                                                  self.ingroup)
-        pickle.dump(majorclones, gzip.open(self.outfile, "wb"))
+        for vj in os.listdir(self.c2n2s_dir):
+            c2n_file = os.path.join(self.c2n2s_dir, vj)
+            outfile = os.path.join(self.outdir, vj)
+            self.addChildTarget(GroupClonesVj(self.names, outfile,
+                                              c2n_file, self.ingroup))
+        #self.setFollowOnTarget(GroupClonesAgg(workdir, self.outfile))
 
-class Overlap(Analysis):
-    '''Set up children jobs to compute clones that are dominantly
-    present in a specific group
-    '''
-    def __init__(self, samples, outdir, opts):
-        Analysis.__init__(self, samples, outdir, opts)
+class Overlap2(Target):
+    def __init__(self, c2n2s_dir, outdir, opts):
+        Target.__init__(self)
+        self.c2n2s_dir = c2n2s_dir
+        self.outdir = outdir
+        self.opts = opts
 
     def run(self):
-        sizetype = 'freq'
-        clone2sample2size = statcommon.get_clone2samples(self.samples, sizetype)
+        #clone2sample2size = {}
+        #objs = libcommon.load_pickledir(self.c2n2s_dir)
+        #for c2n2s in objs:
+        #    clone2sample2size.update(c2n2s)
+
         g2n = self.opts.group2samples
         if g2n and len(g2n) >= 2:
             global_dir = self.getGlobalTempDir()
@@ -162,11 +224,30 @@ class Overlap(Analysis):
                                      os.path.basename(self.outdir.rstrip('/')))
             system("mkdir -p %s" % o_dir)
             for group, names in g2n.iteritems():  # get major & minor clones
-                groupfile = os.path.join(o_dir, "%s.pickle" % group)  # pickle file
-                self.addChildTarget(GroupClones(names, groupfile,
-                                         clone2sample2size, self.opts.ingroup))
+                #groupfile = os.path.join(o_dir, "%s.pickle" % group)  # pickle file
+                groupdir = os.path.join(o_dir, group)
+                system('mkdir -p %s' % groupdir)
+                self.addChildTarget(GroupClones(names, groupdir,
+                                         self.c2n2s_dir, self.opts.ingroup))
             self.setFollowOnTarget(OverlapAllPairGroups(o_dir,
-                               self.outdir, self.opts, clone2sample2size))
+                               self.outdir, self.opts, self.c2n2s_dir))
+
+class Overlap(Analysis):
+    '''Set up children jobs to compute clones that are dominantly
+    present in a specific group
+    '''
+    def __init__(self, indir, outdir, opts):
+        Analysis.__init__(self, indir, outdir, opts)
+
+    def run(self):
+        self.logToMaster("Overlap\n")
+        global_dir = self.getGlobalTempDir()
+        workdir = os.path.join(global_dir, "overlap_temp")
+        system('mkdir -p %s' % workdir)
+        sizetype = 'freq'
+        self.addChildTarget(statcommon.GetClone2Samples(self.indir, workdir,
+                                                        sizetype))
+        self.setFollowOnTarget(Overlap2(workdir, self.outdir, self.opts))
 
 
 

@@ -35,7 +35,7 @@ import aimseqtk.src.properties.repsize as repsize
 import aimseqtk.src.properties.diversity as diversity
 import aimseqtk.src.properties.similarity as similarity
 import aimseqtk.src.properties.clonesize as clonesize
-import aimseqtk.src.normalize as normalize
+import aimseqtk.src.normalize.normalize as normalize
 import aimseqtk.src.cdr3len.cdr3len as lendist
 import aimseqtk.src.geneusage.geneusage as geneusage
 import aimseqtk.src.overlap.overlap as overlap
@@ -53,8 +53,11 @@ class Setup(Target):
         self.options = options
 
     def run(self):
+        self.logToMaster("Setting up...")
         opts = self.options
         if opts.format == 'pickle':
+            self.addChildTarget(MakeDbSamples(opts.indir, opts))
+        elif opts.format == 'db':
             self.addChildTarget(Preprocess(opts.indir, opts))
         else:
             # Read input files:
@@ -75,62 +78,24 @@ class Filter(Target):
 
     def run(self):
         opts = self.options
-        name2group = {}
-        name2color = {}
-        name2marker = {}
-        if opts.group2samples:
-            name2group = libcommon.get_val2key_1to1(opts.group2samples)
-        if opts.makeplots:
-            names = [os.path.splitext(file)[0] for file in 
-                                                os.listdir(self.sampledir)]
-            assert names is not None
-            name2color = drawcommon.get_name2color_wtgroup(names, name2group,
-                                                   opts.group2samples)
-            name2marker = drawcommon.get_name2marker_wtgroup(names,
-                                                   opts.group2samples)
         global_dir = self.getGlobalTempDir()
-        filter_dir = os.path.join(global_dir, "filterBySize")
+        filter_dir = os.path.join(global_dir, "filtered")
         system("mkdir -p %s" % filter_dir)
-        for file in os.listdir(self.sampledir):
-            samplefile = os.path.join(self.sampledir, file)
-            sample = pickle.load(gzip.open(samplefile, "rb"))
-            libsample.set_sample_group(sample, name2group)
-            libsample.set_sample_color(sample, name2color)
-            libsample.set_sample_marker(sample, name2marker)
-            outfile = os.path.join(filter_dir, "%s.pickle" % sample.name)
-            self.addChildTarget(libsample.FilterBySize(outfile, sample,
-                   opts.mincount, opts.maxcount, 
-                   opts.minfreq, opts.maxfreq, True))
-        self.setFollowOnTarget(GetProductive(filter_dir, opts))
+        for sam in os.listdir(self.sampledir):  # each sample
+            samdir = os.path.join(self.sampledir, sam)  
+            if not os.path.isdir(samdir):
+                raise incommon.ReadSampleError("%s is not a dir" % samdir)
+            for file in os.listdir(samdir):  # each batch
+                samfile = os.path.join(samdir, file)
+                self.addChildTarget(libsample.FilterSample(filter_dir, sam,
+                                                           samfile, opts))
+        self.setFollowOnTarget(MakeDbSamples(filter_dir, opts))
 
-class GetProductive(Target):
-    '''Split each sample into productive and non-productive clones
-    '''
-    def __init__(self, indir, options):
-        Target.__init__(self)
-        self.indir = indir
-        self.options = options
-
-    def run(self):
-        global_dir = self.getGlobalTempDir()
-        outdir = os.path.join(global_dir, "filterByStatus")
-        pdir = os.path.join(outdir, "productive")
-        system("mkdir -p %s" % pdir)
-        npdir = os.path.join(outdir, "non_productive")
-        system("mkdir -p %s" % npdir)
-
-        for file in os.listdir(self.indir):
-            filepath = os.path.join(self.indir, file)
-            sample = pickle.load(gzip.open(filepath, "rb"))
-            self.addChildTarget(libsample.FilterByStatus(pdir, npdir, sample,
-                                                         True, self.options))
-        self.setFollowOnTarget(Preprocess(pdir, self.options))
-
-class Preprocess(Target):
-    '''If at the "prelim" stage, perform rarefaction analyses
-       If "sampling" is requested, down-sampling samples, then 
-       if "normalize" is requested, normalize samples, then
-       go to the beginning of analyses
+class MakeDbSamples(Target):
+    '''Set up jobs to load each sample into one sqlite3 db file,
+    which contains:
+    1/ a sampleinfo table,
+    2/ clone tables, each represent a V-J combination
     '''
     def __init__(self, sampledir, options):
         Target.__init__(self)
@@ -138,6 +103,57 @@ class Preprocess(Target):
         self.options = options
 
     def run(self):
+        self.logToMaster("MakeDbSamples\n")
+        opts = self.options
+        dbdir = os.path.join(opts.outdir, "sample_db")
+        system("mkdir -p %s" % dbdir)
+
+        status = ['productive', 'non_productive']
+        for s in status:
+            indir = os.path.join(self.sampledir, s)
+            outdir = os.path.join(dbdir, s)
+            system("mkdir -p %s" % outdir)
+            names = os.listdir(indir)
+            n2g, n2c, n2m = samples_group_info(names, opts.group2samples)
+            
+            for sam in names:
+                samdir = os.path.join(indir, sam)
+                sam_dbdir = os.path.join(outdir, sam)
+                system("mkdir -p %s" % sam_dbdir)
+                assert os.path.isdir(samdir)
+                g, c, m = sample_group_info(sam, n2g, n2c, n2m)
+                self.addChildTarget(libsample.MakeDbSample(samdir, sam_dbdir, opts,
+                                                           g, c, m))
+            
+        if opts.samout:  # write samples if requested
+            samoutdir = os.path.join(opts.outdir, "samples")
+            system("mkdir -p %s" % samoutdir)
+            self.addChildTarget(libsample.WriteSamples(self.sampledir,
+                                                samoutdir, opts.samout))
+        pdir = os.path.join(dbdir, "productive")
+        if opts.analyses != ['db']:
+            self.setFollowOnTarget(Preprocess(pdir, opts))
+
+class Preprocess(Target):
+    '''If at the "prelim" stage, perform rarefaction analyses
+       If "sampling" is requested, down-sampling samples, then 
+       if "normalize" is requested, normalize samples, then
+       go to the beginning of analyses
+       sampledir/
+          sample1/
+             sample1
+             v1j1
+             viji
+             ...
+             vnjn
+    '''
+    def __init__(self, sampledir, options):
+        Target.__init__(self)
+        self.sampledir = sampledir
+        self.options = options
+
+    def run(self):
+        self.logToMaster("Preprocess\n")
         opts = self.options
         if opts.analyses == ['prelim']:
             self.addChildTarget(RepSize(self.sampledir, opts))
@@ -159,22 +175,29 @@ class RepSize(Target):
         self.options = options
 
     def run(self):
+        self.logToMaster("RepSize\n")
+        stime = time.time()
         name2sample = {}
-        for file in os.listdir(self.sampledir):
-            filepath = os.path.join(self.sampledir, file)
-            prd_sam = pickle.load(gzip.open(filepath, 'rb'))
-            name2sample[prd_sam.name] = prd_sam
+        for sam in os.listdir(self.sampledir):
+            filepath = os.path.join(self.sampledir, sam, sam)
+            sample = pickle.load(gzip.open(filepath, 'rb'))
+            name2sample[sam] = sample
+        logger.info("RepSize, done loading %d samples in %.4f s." %
+                    (len(name2sample), (time.time() - stime)))
+        stime = time.time()
 
         # Get summary of samples' sizes:
         group2samples = self.options.group2samples
-        #group2avr = repsize.get_group_avr(name2sample, group2samples)
         group2avr = libcommon.get_group_avr(name2sample, group2samples)
+        logger.info("RepSize, done computing group_avr in %.4f s." %
+                    (time.time() - stime))
+        
         txtfile = os.path.join(self.options.outdir, "clonesize.txt")
         repsize.repsize_table(name2sample, txtfile, group2avr, group2samples)
         texfile = os.path.join(self.options.outdir, "clonesize.tex")
         repsize.repsize_table(name2sample, texfile, group2avr, group2samples,
                               True)
-        self.addChildTarget(diversity.DiversityRarefaction(name2sample,
+        self.addChildTarget(diversity.DiversityRarefaction(self.sampledir,
                                                            self.options))
 
 class DownSampling(Target):
@@ -187,17 +210,20 @@ class DownSampling(Target):
         self.options = options
 
     def run(self):
+        self.logToMaster("DownSampling\n")
         opts = self.options
         global_dir = self.getGlobalTempDir()
-        sampling_dir = os.path.join(global_dir, "down_sampling")
+        #sampling_dir = os.path.join(global_dir, "down_sampling")
+        sampling_dir = os.path.join(opts.outdir, "down_sampling")
         system("mkdir -p %s" % sampling_dir)
 
-        for file in os.listdir(self.sampledir):
-            filepath = os.path.join(self.sampledir, file)
-            sample = pickle.load(gzip.open(filepath, 'rb'))
-            picklefile = os.path.join(sampling_dir, "%s.pickle" % sample.name) 
-            self.addChildTarget(libsample.SampleAnalysis(sample, picklefile,
-                                            libsample.sampling, opts.sampling))
+        for sam in os.listdir(self.sampledir):
+            samdir = os.path.join(self.sampledir, sam)
+            sample = pickle.load(gzip.open(os.path.join(samdir, sam), "rb"))
+            out_samdir = os.path.join(sampling_dir, sam) 
+            system("mkdir -p %s" % out_samdir)
+            self.addChildTarget(libsample.SampleAnalysis0(sample, samdir,
+                                out_samdir, libsample.sampling, opts.sampling))
         if opts.normalize:
             self.setFollowOnTarget(Normalize(sampling_dir, opts))
         else:
@@ -212,18 +238,16 @@ class Normalize(Target):
        self.options = options
 
     def run(self):
+        self.logToMaster("Normalize\n")
         opts = self.options
         global_dir = self.getGlobalTempDir()
         norm_dir = os.path.join(global_dir, "normalized")
         system("mkdir -p %s" % norm_dir)
 
-        samples = libcommon.load_pickledir(self.sampledir)
+        #samples = libcommon.load_pickledir(self.sampledir)
         sizetype = 'count'
-        norm_matrix = normalize.normalize_MRexp(samples, sizetype)
-        samples = normalize.matrix_to_normcount(norm_matrix, samples)
-        for s in samples:
-            outfile = os.path.join(norm_dir, "%s.pickle" % s.name)
-            pickle.dump(s, gzip.open(outfile, "wb"))
+        self.addChildTarget(normalize.NormalizeMRexp(self.sampledir, norm_dir,
+                                                     sizetype))
         self.setFollowOnTarget(Analyses(norm_dir, opts))
 
 class Analyses(Target):
@@ -235,41 +259,65 @@ class Analyses(Target):
         self.options = options
 
     def run(self):
+        self.logToMaster("Analyses\n")
         opts = self.options
-        samples = libcommon.load_pickledir(self.sampledir)
+        samdir = self.sampledir
+        #samples = libcommon.load_pickledir(self.sampledir)
         plotfmt = None
         if opts.makeplots:
             plotfmt = opts.plotformat
         if 'diversity' in opts.analyses:
             diverdir = analysis_outdir("diversity", opts.outdir)
-            self.addChildTarget(diversity.Diversity(samples, diverdir,
+            self.addChildTarget(diversity.Diversity(samdir, diverdir,
                                        opts.diversity, opts.group2samples,
                                        opts.matched, plotfmt))
         if 'similarity' in opts.analyses:
             simidir = analysis_outdir("similarity", opts.outdir)
-            self.addChildTarget(similarity.Similarity(samples, simidir, opts))
+            self.addChildTarget(similarity.Similarity(samdir, simidir, opts))
         if 'clonesize' in opts.analyses:
             csdir = analysis_outdir("clonesize", opts.outdir)
-            self.addChildTarget(clonesize.CloneSize(samples, csdir, opts))
+            self.addChildTarget(clonesize.CloneSize(samdir, csdir, opts))
         if 'lendist' in opts.analyses:
             lddir = analysis_outdir("lendist", opts.outdir)
-            self.addChildTarget(lendist.LenDist(samples, lddir, opts))
+            self.addChildTarget(lendist.LenDist(samdir, lddir, opts))
         if 'geneusage' in opts.analyses:
             gudir = analysis_outdir("geneusage", opts.outdir)
-            self.addChildTarget(geneusage.GeneUsage(samples, gudir, opts))
+            self.addChildTarget(geneusage.GeneUsage(samdir, gudir, opts))
         #if 'aausage' in opts.analyses:
         #    audir = analysis_outdir("aausage", opts.outdir)
         #    self.addChildTarget(aausage.AaUsage(samples, audir, opts))
         if 'overlap' in opts.analyses:
             odir = analysis_outdir("overlap", opts.outdir)
-            self.addChildTarget(overlap.Overlap(samples, odir, opts))
+            self.addChildTarget(overlap.Overlap(samdir, odir, opts))
         if 'trackclone' in opts.analyses:
             tdir = analysis_outdir("track_top_clones", opts.outdir)
-            self.addChildTarget(trackclone.TrackTopClones(samples, tdir, opts))
+            self.addChildTarget(trackclone.TrackTopClones(samdir, tdir, opts))
         if opts.clones:
             cdir = analysis_outdir("track_clones", opts.outdir)
-            self.addChildTarget(trackclone.TrackClones(samples, cdir, opts,
+            self.addChildTarget(trackclone.TrackClones(samdir, cdir, opts,
                                                                   opts.clones))
+
+def sample_group_info(name, n2g, n2c, n2m):
+    group = None
+    color = (0, 0, 0)
+    marker = '.'
+    if name in n2g:
+        group = n2g[name]
+    if name in n2c:
+        color = n2c[name]
+    if name in n2m:
+        marker = n2m[name]
+    return group, color, marker
+
+def samples_group_info(names, g2names):
+    n2group = {}
+    n2color = {}
+    n2marker = {}
+    if g2names:
+        n2group = libcommon.get_val2key_1to1(g2names)
+        n2color = drawcommon.get_name2color_wtgroup(names, n2group, g2names)
+        n2marker = drawcommon.get_name2marker_wtgroup(names, g2names)
+    return n2group, n2color, n2marker
 
 def analysis_outdir(analysis, outdir):
     analysis_dir = os.path.join(outdir, analysis)

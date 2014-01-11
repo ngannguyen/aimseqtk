@@ -77,7 +77,7 @@ def get_name2marker_wtgroup(samplenames, group2names):
     if group2names:
         for group, names in group2names.iteritems():
             if len(markers) < len(names):
-                return None
+                return {}
         for group, names in group2names.iteritems():
             for i, name in enumerate(names):
                 name2marker[name] = markers[i]
@@ -137,6 +137,11 @@ def write_image(fig, pdf, outformat, outname, dpi):
 def set_axes(fig):                                                                     
     # Set single axes
     return fig.add_axes([0.12, 0.15, 0.85, 0.75])                                      
+
+def get_axes(outfile="plot", w=10.0, h=8.0, outfmt='pdf', dpi=300):
+    fig, pdf = init_image(w, h, outfmt, outfile, dpi)
+    axes = fig.add_axes([0.12, 0.15, 0.85, 0.75])                                      
+    return axes, fig, pdf
 
 def set_axes2(fig, numsam, samples_per_plot):
     # Set multiple axes, depending on the number of samples_per_plot
@@ -206,12 +211,55 @@ def edit_spine(axes):
         else:
             raise ValueError('Unknown spine location %s\n' % loc)                     
 
+def set_grid(axes):
+    axes.xaxis.grid(b=True, color='#3F3F3F', linestyle='-', linewidth=0.05)
+    axes.yaxis.grid(b=True, color='#3F3F3F', linestyle='-', linewidth=0.05)
+
+def set_xticks(axes, data, labels):
+    axes.xaxis.set_ticks(data)
+    axes.xaxis.set_ticklabels(labels)
+
+def set_yticks(axes, data, labels):
+    axes.yaxis.set_ticks(data)
+    axes.yaxis.set_ticklabels(labels)
+
+def set_labels(axes, title=None, xlabel=None, ylabel=None):
+    if title:
+        axes.set_title(title, size='xx-large', weight='bold')
+    if xlabel:
+        axes.set_xlabel(xlabel, size='x-large', weight='bold')
+    if ylabel:
+        axes.set_ylabel(ylabel, size='x-large', weight='bold')
+
 def set_ticks(axes):
     axes.xaxis.set_ticks_position('bottom')                                           
     axes.yaxis.set_ticks_position('left')                                             
     minorLocator = LogLocator(base=10, subs = range(1, 10))                           
     axes.xaxis.set_minor_locator(minorLocator)                                        
-                                                
+
+def adjust_xticklabels(axes, size='small', weight='bold', rotation=None):
+    for label in axes.get_xticklabels():
+        label.set_fontsize(size)
+        label.set_fontweight(weight)
+        if rotation:
+            label.set_rotation(rotation)
+
+def adjust_yticklabels(axes, size='small', weight='bold', rotation=None):
+    for label in axes.get_yticklabels():
+        label.set_fontsize(size)
+        label.set_fontweight(weight)
+        if rotation:
+            label.set_rotation(rotation)
+
+def adjust_ticklabels(axes, size='small', weight='bold', xrotation=None,
+                                                         yrotation=None):
+    adjust_xticklabels(axes, size, weight, xrotation)
+    adjust_yticklabels(axes, size, weight, yrotation)
+
+def set_legend(axes, lines, linenames):
+    legend = axes.legend(lines, linenames, numpoints=1, loc='best', ncol=1)
+    legend._drawFrame = False
+
 def bihist(y1, y2, axes, bins, orientation, color=None):
     # Top hist
     n1, bins1, patch1 = axes.hist(y1, bins=bins, orientation=orientation, 
@@ -247,6 +295,7 @@ def draw_heatmap(rownames, colnames, rows, outfile):
     rcolnames = ro.StrVector(colnames)
     rmatrix = ro.r['matrix'](rvec, nrow=len(rows), byrow=True)
 
+    print "outfile %s" % outfile
     grdevices.pdf(file=outfile)
     try:
         #gplots.heatmap_2(rmatrix)

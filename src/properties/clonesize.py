@@ -34,7 +34,8 @@ class CloneSizeStat(SampleStat):
         if freqs:
             self.freqs = freqs
         else:
-            self.freqs = [0, 0.001, 0.01, 0.1, 1]
+            #self.freqs = [0, 0.001, 0.01, 0.1, 1]
+            self.freqs = [0, 0.00001, 0.0001, 0.001, 0.01]
         self.numclones = [0.0] * len(self.freqs)
         self.counts = [0.0] * len(self.freqs)
         self.topfreqs = []  # frequencies of the top clones
@@ -48,13 +49,16 @@ def get_attr_colfields(attr, obj):
     else:
         return [str(i + 1) for i in range(len(obj.topfreqs))]
 
-def sample_clonesize_stat(sample, freqs=[], numtop=50, args=None):
+def sample_clonesize_stat(sample, samdir, freqs=[], numtop=50, args=None):
     # calculate: number of clones/ counts that lie within each freq
     # range. Note: freqs must be sorted, or the func will sort it
     # <numtop>: number of top clones whose freqs will be report
     stat = CloneSizeStat(sorted(freqs))
     stat.set_sample_info(sample)
-    sorted_clones = sorted(sample.clones, reverse=True, key=lambda c: c.freq)
+    if args:
+        numtop = args[0]
+    clones = libsample.sample_all_clones(samdir)
+    sorted_clones = sorted(clones, reverse=True, key=lambda c: c.freq)
    
     for index, clone in enumerate(sorted_clones):
         if index < numtop:
@@ -135,23 +139,26 @@ class CloneSizePlots(StatAnalyses):
                                                     opts.plotformat, opts.dpi)
                 elif g2avr:
                     csplot.draw_clonesize_dist(g2avr, attr, plotfile,
-                                                        opts.outfmt, opts.dpi)
+                                                        opts.plotformat, opts.dpi)
 
 class CloneSize(Analysis):
     '''Make plots of different clonesize distributions
     '''
-    def __init__(self, samples, outdir, opts):
-        Analysis.__init__(self, samples, outdir, opts)
+    def __init__(self, indir, outdir, opts):
+        Analysis.__init__(self, indir, outdir, opts)
 
     def run(self):
         opts = self.opts
+        topclone = opts.cs_topclone
         global_dir = self.getGlobalTempDir()
         cs_dir = os.path.join(global_dir, "clonesize_%s" %
                                      os.path.basename(self.outdir.rstrip('/')))
         system("mkdir -p %s" % cs_dir)
-        for sample in self.samples:
-            outfile = os.path.join(cs_dir, "%s.pickle" % sample.name)
-            self.addChildTarget(libsample.SampleAnalysis(sample, outfile,
-                                                        sample_clonesize_stat))
+        for sam in os.listdir(self.indir):
+            samdir = os.path.join(self.indir, sam)
+            sample = pickle.load(gzip.open(os.path.join(samdir, sam), 'rb'))
+            outfile = os.path.join(cs_dir, "%s.pickle" % sam)
+            self.addChildTarget(libsample.SampleAnalysis(sample, samdir,
+                                     outfile, sample_clonesize_stat, topclone))
         self.setFollowOnTarget(CloneSizePlots(cs_dir, self.outdir, opts))
 

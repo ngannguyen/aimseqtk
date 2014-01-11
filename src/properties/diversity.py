@@ -9,6 +9,7 @@ Plot: xaxis: # sampling size; yaxis: diversity index. One curve/sample
 
 import os
 import sys
+import time
 import numpy as np
 import gzip
 import cPickle as pickle
@@ -16,6 +17,7 @@ from optparse import OptionGroup
 
 from jobTree.scriptTree.target import Target
 from sonLib.bioio import system
+from sonLib.bioio import logger
 
 import aimseqtk.lib.sample as libsample
 import aimseqtk.lib.common as libcommon
@@ -74,19 +76,34 @@ def rf_diversity_table(name2size2sampling, outfile, index):
         f.write("\n")
     f.close()
 
-#def sample_sampling_diversity(sample, size, indices):
-def sample_sampling_diversity(sample, args=None):
+def sample_get_clone_attrs(name, samdir, attr):
+    # return a list of attr of all clones of sample
+    vec = []
+    for vj in os.listdir(samdir):
+        if vj == name:
+            continue
+        vjfile = os.path.join(samdir, vj)
+        clones = pickle.load(gzip.open(vjfile, "rb"))
+        vjvec = [c[attr] for c in clones]
+        vec.extend(vjvec)
+    return vec
+
+def sample_sampling_diversity(sample, samdir, args=None):
     # Sampling sample to "size, and compute the "index" of the subsample
-    assert len(args) == 2
+    assert len(args) == 3
     size = args[0]
     indices = args[1]
+    workdir = args[2]
     if size is None:  # no sampling, compute diversity of original sample
-        subsample = sample
+        subsampledir = samdir
     else:
-        subsample = libsample.sampling(sample, [size])
+        subsampledir = os.path.join(workdir, "subsample")
+        system("mkdir -p %s" % subsampledir)
+        libsample.sampling(sample, samdir, subsampledir, (size,))
+    
     sampling = SampleDiversityStat()
-    sampling.set_sample_info(subsample)
-    counts = [clone.count for clone in subsample.clones]
+    sampling.set_sample_info(sample)
+    counts = sample_get_clone_attrs(sample.name, subsampledir, "count")
 
     #import rpy2.rinterface as rinterface
     #rinterface.set_initoptions(('rpy2', '--no-save', '--no-restore'))
@@ -98,14 +115,13 @@ def sample_sampling_diversity(sample, args=None):
     rcounts = robjs.IntVector(counts)
     for index in indices:
         if index == 'numclone':
-            sampling[index] = subsample.numclone
+            sampling[index] = len(counts)
         elif index == 'fisher_alpha':
             rfisher = vegan.fisher_alpha(rcounts)
             sampling[index] = rfisher[0]
         else:
             rval = vegan.diversity(rcounts, index)
             sampling[index] = rval[0]
-    
     return sampling
 
 def sample_avr_sampling_diversity(samplings, indices):
@@ -121,18 +137,18 @@ def sample_avr_sampling_diversity(samplings, indices):
         avrsampling[stds[i]] = np.std(vals)
     return avrsampling
 
-def sample_rf_sizes(sample, bin=None, rf_sizes=None):
+def sample_rf_sizes(sample_size, bin=None, rf_sizes=None):
     # Return the list of sampling size for the sample
     sizes = []
     if rf_sizes:
         for s in rf_sizes:
-            if s <= sample.size:
+            if s <= sample_size:
                 sizes.append(s)
-    elif bin and bin <= sample.size:
-        sizes = range(bin, sample.size + 1, bin)
+    elif bin and bin <= sample_size:
+        sizes = range(bin, sample_size + 1, bin)
     
     if len(sizes) == 0:
-        sizes = [sample.size]
+        sizes = [sample_size]
     return sizes
 
 def diversity_ttest_text(index2obj, outfile):
@@ -191,13 +207,15 @@ def add_rarefaction_options(parser):
 
 #============ PARALLELIZE =============
 class AvrSamplingDiversity(Target):
-    def __init__(self, indir, indices, outdir):
+    def __init__(self, indir, indices, outdir, workdir):
         Target.__init__(self)
         self.indir = indir
         self.indices = indices
         self.outdir = outdir
+        self.workdir = workdir
 
     def run(self):
+        system("rm -Rf %s" % self.workdir)  # cleanup
         for sizedir in os.listdir(self.indir):
             sizedirpath = os.path.join(self.indir, sizedir)
             samplings = libcommon.load_pickledir(sizedirpath)
@@ -205,40 +223,50 @@ class AvrSamplingDiversity(Target):
                                                         self.indices)
             outfile = os.path.join(self.outdir, "%s.pickle" % sizedir)
             pickle.dump(avrsampling, gzip.open(outfile, "wb"))
+        self.setFollowOnTarget(libcommon.CleanupDir(self.indir))
 
 class SampleDiversityRarefaction(Target):
     '''Perform rarefaction analyses on the specific sample
     "numsampling" of times
     '''
-    def __init__(self, outdir, sample, sizes, numsampling, indices, avrdir):
+    def __init__(self, outdir, sample, samdir, sizes, numsampling, indices,
+                                                           avrdir, workdir):
         Target.__init__(self)
         self.outdir = outdir
         self.sample = sample
+        self.samdir = samdir
         self.sizes = sizes
         self.numsampling = numsampling
         self.indices = indices
         self.avrdir = avrdir
+        self.workdir = workdir
 
     def run(self):
         for size in self.sizes:
             sizedir = os.path.join(self.outdir, "%d" % size)
             system("mkdir -p %s" % sizedir)
             for i in xrange(self.numsampling):
-                outfile = os.path.join(sizedir, "%d.pickle" % i)
+                outfile = os.path.join(sizedir, "%d" % i)
+                workdir = os.path.join(self.workdir, str(size), str(i))
+                system("mkdir -p %s" % workdir)
                 self.addChildTarget(libsample.SampleAnalysis(self.sample,
-                       outfile, sample_sampling_diversity, size, self.indices))
+                                     self.samdir, outfile,
+                                     sample_sampling_diversity,
+                                     size, self.indices, workdir))
         self.setFollowOnTarget(AvrSamplingDiversity(self.outdir, self.indices,
-                                                    self.avrdir))
+                                                    self.avrdir, self.workdir))
 
 class DiversityRarefactionSummary(Target):
     # Print summary tables and draw plots
-    def __init__(self, indir, name2sample, options):
+    def __init__(self, indir, sampledir, options, workdir):
         Target.__init__(self)
         self.indir = indir   # avrdir: avrdir/sample/size.pickle
-        self.name2sample = name2sample
+        self.sampledir = sampledir  # samples/sample/vj
         self.options = options
+        self.workdir = workdir
 
     def run(self):
+        system("rm -Rf %s" % self.workdir)
         opts = self.options
         indices = opts.diversity
         name2size2sampling = {}
@@ -277,8 +305,8 @@ class DiversityRarefactionSummary(Target):
             rf_diversity_table(name2size2sampling, rftabfile, index)
             if opts.makeplots:
                 rfplotfile = os.path.join(pdfdir, "rf_%s" % index)
-                rfplot.draw_rarefaction(name2size2sampling, self.name2sample,
-                          groups, index, rfplotfile, opts.plotformat, opts.dpi)
+                rfplot.draw_rarefaction(name2size2sampling, groups, index,
+                                        rfplotfile, opts.plotformat, opts.dpi)
         # Summary table for each sampling size:
         for size, name2sampling in size2name2sampling.iteritems():
             g2avr = {}
@@ -288,12 +316,13 @@ class DiversityRarefactionSummary(Target):
             tabcommon.table(name2sampling, txtfile, indices, g2avr, g2s)
             texfile = os.path.join(texdir, "diversity_%d.tex" % size)
             tabcommon.table(name2sampling, texfile, indices, g2avr, g2s, True)
+        self.setFollowOnTarget(libcommon.CleanupDir(self.indir))
 
 class DiversityRarefaction(Target):
     # diversity_avr/sample/size.pickle
-    def __init__(self, name2sample, options):
+    def __init__(self, indir, options):
         Target.__init__(self)
-        self.name2sample = name2sample
+        self.indir = indir
         self.options = options
 
     def run(self):
@@ -303,20 +332,26 @@ class DiversityRarefaction(Target):
         system("mkdir -p %s" % outdir)
         avrdir = os.path.join(rf_dir, "diversity_avr")
         system("mkdir -p %s" % avrdir)
+        workdir = os.path.join(rf_dir, "temp")
+        system("mkdir -p %s" % workdir)
 
         bin = self.options.bin
         rf_sizes = self.options.rf_sizes
-        for name, sample in self.name2sample.iteritems():
-            sampledir = os.path.join(outdir, name)
-            avrsampledir = os.path.join(avrdir, name)
-            system("mkdir -p %s" % sampledir)
-            system("mkdir -p %s" % avrsampledir)
-            sizes = sample_rf_sizes(sample, bin, rf_sizes)
-            self.addChildTarget(SampleDiversityRarefaction(sampledir, sample,
-                                    sizes, self.options.rf_num_sampling,
-                                    self.options.diversity, avrsampledir))
+        for name in os.listdir(self.indir):
+            samdir = os.path.join(self.indir, name)
+            sam_outdir = os.path.join(outdir, name)
+            avr_outdir = os.path.join(avrdir, name)
+            sam_workdir = os.path.join(workdir, name)
+            system("mkdir -p %s" % sam_outdir)
+            system("mkdir -p %s" % avr_outdir)
+            system("mkdir -p %s" % sam_workdir)
+            sample = pickle.load(gzip.open(os.path.join(samdir, name), "rb"))
+            sizes = sample_rf_sizes(sample.size, bin, rf_sizes)
+            self.addChildTarget(SampleDiversityRarefaction(sam_outdir, sample,
+                             samdir, sizes, self.options.rf_num_sampling,
+                             self.options.diversity, avr_outdir, sam_workdir))
         self.setFollowOnTarget(DiversityRarefactionSummary(avrdir,
-                                   self.name2sample, self.options))
+                                   self.indir, self.options, workdir))
 
 class DiversityTtest(Target):
     #Outfile: index.pickle (pair2tv, group2meanstd)
@@ -398,9 +433,9 @@ class Diversity(Analysis):
        pair of groups. If plot is True, draw plot: boxplots of: 
        xaxis: groups, yaxis: diversity indices
     '''
-    def __init__(self, samples, outdir, indices, group2samples, matched,
+    def __init__(self, indir, outdir, indices, group2samples, matched,
                                                                  plotfmt=None):
-        Analysis.__init__(self, samples, outdir)
+        Analysis.__init__(self, indir, outdir)
         self.indices = indices
         self.group2samples = group2samples
         self.matched = matched
@@ -409,13 +444,18 @@ class Diversity(Analysis):
     def run(self):
         size = None  # no sampling
         global_dir = self.getGlobalTempDir()
+
         d_dir = os.path.join(global_dir, "diversity_%s" %
                                     os.path.basename(self.outdir.rstrip('/')))
         system("mkdir -p %s" % d_dir)
-        for sample in self.samples:
-            outfile = os.path.join(d_dir, "%s.pickle" % sample.name)
-            self.addChildTarget(libsample.SampleAnalysis(sample, outfile,
-                               sample_sampling_diversity, size, self.indices))
+
+        for sam in os.listdir(self.indir):
+            samdir = os.path.join(self.indir, sam)
+            sample = pickle.load(gzip.open(os.path.join(samdir, sam), 'rb'))
+            outfile = os.path.join(d_dir, "%s.pickle" % sam)
+            self.addChildTarget(libsample.SampleAnalysis(sample, samdir,
+                                     outfile, sample_sampling_diversity,
+                                     size, self.indices, None))
         self.setFollowOnTarget(DiversitySummary(d_dir, self.outdir,
                 self.indices, self.group2samples, self.matched, self.plotfmt))
 

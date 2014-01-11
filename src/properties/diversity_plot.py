@@ -20,11 +20,8 @@ import aimseqtk.lib.drawcommon as drawcommon
 
 def draw_diversity_plot(group2names, name2obj, attr, outfile, outfmt='pdf',
                                                                       dpi=300):
-    w = 10.0
-    h = 8.0
-    fig, pdf = drawcommon.init_image(w, h, outfmt, outfile, dpi)
-    axes = drawcommon.set_axes(fig)
-    
+    axes, fig, pdf = drawcommon.get_axes(outfile=outfile, outfmt=outfmt,
+                                                                      dpi=dpi)
     xdata = range(1, len(group2names) + 1)
     xlabels = sorted(group2names.keys())
     data = []
@@ -33,13 +30,12 @@ def draw_diversity_plot(group2names, name2obj, attr, outfile, outfmt='pdf',
         vec = [name2obj[name][attr] for name in names]
         data.append(vec)
     axes.boxplot(data)
+    
+    drawcommon.set_grid(axes)
     drawcommon.edit_spine(axes)
-    axes.xaxis.set_ticks(xdata)
-    axes.xaxis.set_ticklabels(xlabels)
-    # Labeling:
-    #axes.set_title("%s" % attr.title(), size='xx-large', weight='bold')
-    axes.set_xlabel("Group", size='x-large', weight='bold')
-    axes.set_ylabel(attr.title(), size='x-large', weight='bold')
+    drawcommon.set_xticks(axes, xdata, xlabels)
+    drawcommon.set_labels(axes, xlabel="Group", ylabel=attr.title())
+    
     axes.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
     
     drawcommon.write_image(fig, pdf, outfmt, outfile, dpi)

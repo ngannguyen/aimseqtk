@@ -13,6 +13,14 @@ from scipy.stats import ttest_ind
 from scipy.stats import ttest_rel
 from scipy.stats import fisher_exact
 import numpy as np
+import gzip
+import cPickle as pickle
+
+from jobTree.scriptTree.target import Target
+
+import aimseqtk.lib.sample as libsample
+import aimseqtk.lib.common as libcommon
+
 
 class SampleStat:
     def __init__(self):
@@ -96,6 +104,53 @@ class PairStat:
 
     def __setitem__(self, name, val):
         self.__dict__[name] = val
+
+class GetClone2SamplesVJ(Target):
+    def __init__(self, vj, sams, indir, outfile, sizetype):
+        Target.__init__(self)
+        self.vj = vj
+        self.sams = sams
+        self.indir = indir
+        self.outfile = outfile
+        self.sizetype = sizetype
+
+    def run(self):
+        #self.logToMaster("GetClone2SamplesVJ, sizetype: %s\n" % self.sizetype)
+        clone2sam2size = {}
+        for sam in self.sams:
+            vjfile = os.path.join(self.indir, sam, self.vj)
+            clones = pickle.load(gzip.open(vjfile, 'rb'))
+            for c in clones:
+                cloneid = c.get_vseqj()
+                if self.sizetype not in c.getitems():
+                    raise KeyError("Cdr3Clone does not have attr %s" %
+                                   self.sizetype)
+                size = c[self.sizetype]
+                if cloneid not in clone2sam2size:
+                    clone2sam2size[cloneid] = {sam: size}
+                elif sam not in clone2sam2size[cloneid]:
+                    clone2sam2size[cloneid][sam] = size
+                else:
+                    clone2sam2size[cloneid][sam] += size
+        pickle.dump(clone2sam2size, gzip.open(self.outfile, "wb")) 
+
+class GetClone2Samples(Target):
+    '''get clone2sample2size
+    '''
+    def __init__(self, indir, outdir, sizetype, sams=None):
+        Target.__init__(self)
+        self.indir = indir
+        self.outdir = outdir
+        self.sizetype = sizetype
+        self.sams = sams
+
+    def run(self):
+        self.logToMaster("GetClone2Samples\n")
+        vj2sams = libsample.get_vj2sams(self.indir, self.sams)
+        for vj, sams in vj2sams.iteritems():
+            outfile = os.path.join(self.outdir, vj)
+            self.addChildTarget(GetClone2SamplesVJ(vj, sams, self.indir,
+                                                   outfile, self.sizetype))
 
 #========== FUNCTIONS ==========
 def get_clone2samples(samples, sizetype='count'):
@@ -232,7 +287,10 @@ def ttest_allpairs(group2names, name2obj, matched, attr=None, func=None,
                 group2mean[g2] = (np.mean(vec2), np.std(vec2))
             pair = "%s_%s" % (g1, g2)
             if vec1 and vec2:
-                tval, pval = ttest(vec1, vec2)
+                if matched and len(vec1) != len(vec2):
+                    tval, pval = ttest_ind(vec1, vec2)
+                else:
+                    tval, pval = ttest(vec1, vec2)
             else:
                 tval = 2  # temporary...
                 pval = 2
@@ -241,8 +299,8 @@ def ttest_allpairs(group2names, name2obj, matched, attr=None, func=None,
 
 def ttest_pair(vec1, vec2, matched=False):
     ttest = ttest_ind
-    if matched:
-        assert len(vec1) == len(vec2)
+    if matched and len(vec1) == len(vec2):
+        #assert len(vec1) == len(vec2)
         ttest = ttest_rel
     tval, pval = ttest(vec1, vec2)
     return tval, pval
@@ -250,11 +308,20 @@ def ttest_pair(vec1, vec2, matched=False):
 def ttest_write(f, name, pair2tp, group2mean, pcutoff=1):
     for pair, (tval, pval) in pair2tp.iteritems():
         if pval <= pcutoff:
-            f.write("%s\t%s\t%.2e\t%.2e" % (name, pair, tval, pval))
+            #f.write("%s\t%s\t%.2e\t%.2e" % (name, pair, tval, pval))
+            f.write("%s\t%s\t%s\t%s" % (name, pair,
+                                        libcommon.pretty_float(tval),
+                                        libcommon.pretty_float(pval)))
             groups = pair.split("_")
             (m1, std1) = group2mean[groups[0]]
             (m2, std2) = group2mean[groups[1]]
-            f.write("\t%.2e +/- %.2e\t%.2e +/- %.2e\n" % (m1, std1, m2, std2))
+            #f.write("\t%.2e +/- %.2e\t%.2e +/- %.2e\n" % (m1, std1, m2, std2))
+            m1pretty = libcommon.pretty_float(m1)
+            std1pretty = libcommon.pretty_float(std1)
+            m2pretty = libcommon.pretty_float(m2)
+            std2pretty = libcommon.pretty_float(std2)
+            f.write("\t%s +/- %s\t%s +/- %s\n" % (m1pretty, std1pretty,
+                                                  m2pretty, std2pretty))
         
 def vec_mean(vec):
     return np.mean(vec)

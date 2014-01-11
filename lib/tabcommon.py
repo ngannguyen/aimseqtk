@@ -16,18 +16,20 @@ def table_text_tab(f, objs, colfields):
             if not obj or attr not in obj.getitems():
                 f.write("\tNA")
             else:
-                f.write("\t%.3f" % obj[attr])
+                f.write("\t%s" % libcommon.pretty_float(obj[attr]))
+                #f.write("\t%.3f" % obj[attr])
                 stdattr = "%s_std" % attr
                 if stdattr in obj.getitems():
                     std = obj[stdattr]
                     if std:
-                        f.write(" +/- %.3f" % std)
+                        f.write(" +/- %s" % libcommon.pretty_float(std))
+                        #f.write(" +/- %.3f" % std)
         f.write("\n")
 
 def table_text_tab_list(f, objs, listattr):
     for (name, obj) in objs:
         if obj and listattr in obj.getitems():
-            vals = ["%.3f" % v for v in obj[listattr]]
+            vals = ["%s" % libcommon.pretty_float(v) for v in obj[listattr]]
             f.write("%s\t%s\n" % (name, "\t".join(vals)))
 
 def table_text(objs, outfile, colfields, listattr=None):
@@ -47,12 +49,13 @@ def table_latex_tab(f, objs, colfields):
             if not obj or attr not in obj.getitems():
                 f.write(" & NA")
             else:
-                f.write(" & %.3f" % obj[attr])
+                f.write(" & %s" % libcommon.pretty_float(obj[attr]))
+                #f.write(" & %.3f" % obj[attr])
                 stdattr = "%s_std" % attr
                 if stdattr in obj.getitems():
                     std = obj[stdattr]
                     if std:
-                        f.write(" $\pm$ %.3f" % std)
+                        f.write(" $\pm$ %s" % libcommon.pretty_float(std))
         f.write("\\\\\n")
         f.write("\\hline\n")
 
@@ -60,7 +63,8 @@ def table_latex_tab_list(f, objs, listattr):
     for (name, obj) in objs:
         if obj and listattr in obj.getitems():
             f.write("%s & " % name.replace('_', '\_'))
-            vals = ["%.3f" % v for v in obj[listattr]]
+            vals = ["%s" % libcommon.pretty_float(v) for v in obj[listattr]]
+            #vals = ["%.3f" % v for v in obj[listattr]]
             f.write(" & ".join(vals))
             f.write("\\\\\n")
             f.write("\\hline\n")
@@ -113,7 +117,7 @@ def matrix_table(names, rows, outfile):
     for i, name in enumerate(names):
         row = rows[i]
         assert len(names) == len(row)
-        f.write("%s\t%s\n" % (name, "\t".join(["%.3f" % r for r in row])))
+        f.write("%s\t%s\n" % (name, "\t".join(["%.5f" % r for r in row])))
     f.close
 
 

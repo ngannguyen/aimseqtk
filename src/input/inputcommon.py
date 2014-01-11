@@ -29,11 +29,23 @@ import aimseqtk.src.input.sequenta as sequenta
 class FormatError(Exception):
     pass
 
+class ReadSampleError(Exception):
+    pass
+
 class UnrecognizedFormatError(Exception):
     pass
 
+def split_file(file, lineperfile, outbase):
+    headerfile = "%s_header.txt" % outbase
+    system("head -n 1 %s > %s" % (file, headerfile))
+    contentfile = "%s_content.txt" % outbase
+    system("tail -n +2 %s > %s" % (file, contentfile))
+    system("splitFile -head=%s %s %d %s" %
+                            (headerfile, contentfile, lineperfile, outbase))
+    system("rm -f %s %s" % (headerfile, contentfile))
+
 def read_clone_file(file, parsefunc=mitcr.mitcr_parseline):
-    samplename = os.path.splitext(os.path.basename(file))[0]
+    #samplename = os.path.splitext(os.path.basename(file))[0]
     clones = []
     
     f = open(file, 'r')
@@ -49,7 +61,7 @@ def read_clone_file(file, parsefunc=mitcr.mitcr_parseline):
         raise FormatError("File %s has zero clone. Please check the header \
                            line for appropriate column names." % file)
 
-    return libsample.Sample(samplename, clones)
+    return clones
 
 def read_clone_files(indir, parsefunc=mitcr.mitcr_parseline, ext=None):
     # "func" is the converting function, different input formats
@@ -61,7 +73,9 @@ def read_clone_files(indir, parsefunc=mitcr.mitcr_parseline, ext=None):
             if not extension.endswith(ext):
                 continue
 
-        sample = read_clone_file(os.path.join(indir, file), parsefunc)
+        clones = read_clone_file(os.path.join(indir, file), parsefunc)
+        samplename = os.path.splitext(file)[0]
+        sample = libsample.Sample(samplename, clones)
         if sample.name in name2sample:
             sys.stderr.write("Warning: Repetitive sample %s\n" % sample.name)
             name2sample[sample.name].addclones(sample.clones)
@@ -172,15 +186,23 @@ def check_input_options(parser, options):
         options.groups = groups
 
     my_analyses = ['diversity', 'similarity', 'clonesize', 'lendist', 
-                   'geneusage', 'aausage', 'overlap', 'trackclone', 'prelim']
-    analyses = options.analyses.split(',')
-    for a in analyses:
-        if a not in my_analyses:
-            raise libcommon.InputError("Unknown analysis %s." % a)
-    if 'trackclone' in analyses and not options.matched:
-        raise libcommon.InputError(("Matched samples are required if " +
-                                    "'trackclone' analysis is specified. " +
-                                    "Please modify the metadata file."))
+                   'geneusage', 'aausage', 'overlap', 'trackclone',
+                   'prelim', 'db']
+    analyses = []
+    if options.analyses:
+        analyses = options.analyses.split(',')
+    if 'all' in analyses:
+        analyses = my_analyses[:-2]
+        #if not options.matched:
+        #    analyses.remove('trackclone')
+    else:
+        for a in analyses:
+            if a not in my_analyses:
+                raise libcommon.InputError("Unknown analysis %s." % a)
+        #if 'trackclone' in analyses and not options.matched:
+        #    raise libcommon.InputError(("Matched samples are required if " +
+        #                                "'trackclone' analysis is specified." +
+        #                                " Please modify the metadata file."))
     options.analyses = analyses
     if options.samout:
         if options.samout not in ['txt', 'pickle', 'both']:
@@ -211,7 +233,7 @@ def add_input_options(parser):
                             + 'used as sample names. (Required argument).'))
     group.add_option('-f', '--format', dest='format', default='mitcr',
                       help=('Input format. Please choose one of the following:'
-                            + ' [mitcr,adaptive,sequenta,aimseqtk,pickle]. '
+                            + ' [mitcr,adaptive,sequenta,aimseqtk,pickle,db]. '
                             + 'Default=%default'))
     group.add_option('--ext', dest='ext', 
                      help='Input file extension. (Optional)')
@@ -229,9 +251,9 @@ def add_input_options(parser):
                             + 'group. Note: if matched=true, each group must '
                             + 'have the same number of samples and the order '
                             + 'of the samples implied their matching.'))
-    group.add_option('-a', '--analyses', dest='analyses', default='prelim',
+    group.add_option('-a', '--analyses', dest='analyses', default='db',
                      help=('Types of analyses to perform. Default=%default. '
-                           + 'Valid options (comma-separated) are: prelim,'
+                           + 'Valid options (comma-separated) are: db,prelim,'
                            + 'diversity,similarity,clonesize,lendist,geneusage'
                            + ',aausage,overlap,trackclone.'))
     group.add_option('--normalize', dest='normalize', action='store_true',
@@ -240,7 +262,8 @@ def add_input_options(parser):
                                           ))
     group.add_option('--sampling', dest='sampling', type='long',
                      help='Sampling size. Default is using all reads.')
-    group.add_option('--pval', dest='pval', default=0.05, help='pvalue cutoff')
+    group.add_option('--pval', dest='pval', type='float', default=0.05,
+                     help='pvalue cutoff')
     parser.add_option_group(group)
     drawcommon.add_plot_options(parser)
 
@@ -263,43 +286,47 @@ def add_filter_options(parser):
     parser.add_option_group(group)
 
 #============= Parallelizing =========
-class ReadCloneFile(Target):
-    ''' Read input clone file, return a "sample" obj
-    '''
-    def __init__(self, outfile, infile, parsefunc):
+class ReadCloneFileNoSplit(Target):
+    def __init__(self, infile, outfile, parsefunc):
         Target.__init__(self)
-        self.outfile = outfile
         self.infile = infile
+        self.outfile = outfile
         self.parsefunc = parsefunc
 
     def run(self):
         starttime = time.time()
-        sample = read_clone_file(self.infile, self.parsefunc)
-        pickle.dump(sample, gzip.open(self.outfile, "wb"))
+        clones = read_clone_file(self.infile, self.parsefunc)
+        pickle.dump(clones, gzip.open(self.outfile, "wb"))
         mytime = time.time() - starttime
-        logger.debug("Done reading sample file %s in %.4f seconds." % 
-                      (self.infile, mytime))
+        msg = "Done reading sample file %s in %.4f s." % (self.infile, mytime)
+        self.logToMaster(msg)
 
-#class ReadCloneAgg(Target):
-#    def __init__(self, outfile, sampledir):
-#        Target.__init__(self)
-#        self.outfile = outfile
-#        self.sampledir = sampledir
-#
-#    def run(self):
-#        starttime = time.time()
-#        name2sample = {}
-#        for file in os.listdir(self.sampledir):
-#            samplefile = os.path.join(self.sampledir, file)
-#            sample = pickle.load(gzip.open(samplefile, "rb"))
-#            if sample.name in name2sample:
-#                sys.stderr.write("Warning: Repetitive sample %s\n" % sample.name)
-#                name2sample[sample.name].addclones(sample.clones)
-#            else:
-#                name2sample[sample.name] = sample
-#        pickle.dump(name2sample, gzip.open(self.outfile, "wb"))
-#        mytime = time.time() - starttime
-#        logger.debug("Done aggregate all samples, took %.4f seconds" % mytime)
+class ReadCloneFile(Target):
+    ''' Read input clone file, return a "sample" obj
+    '''
+    def __init__(self, outdir, infile, parsefunc):
+        Target.__init__(self)
+        self.outdir = outdir
+        self.infile = infile
+        self.parsefunc = parsefunc
+
+    def run(self):
+        name = os.path.splitext(os.path.basename(self.outdir))[0]
+
+        #split input file into smaller files if too big:
+        global_dir = self.getGlobalTempDir()
+        split_dir = os.path.join(global_dir, "samples_split", name)
+        system("mkdir -p %s" % split_dir)
+        lineperfile = 50000
+        outbase = os.path.join(split_dir, name)
+        split_file(self.infile, lineperfile, outbase)
+
+        for f in os.listdir(split_dir):
+            infile = os.path.join(split_dir, f)
+            outfile = os.path.join(self.outdir, "%s.pickle" % f)
+            self.addChildTarget(ReadCloneFileNoSplit(infile, outfile,
+                                                               self.parsefunc))
+        self.setFollowOnTarget(libcommon.CleanupDir(split_dir))
 
 class ReadCloneFiles(Target):
     '''Set up children jobs to read each input file
@@ -331,8 +358,8 @@ class ReadCloneFiles(Target):
                 if not extension.endswith(self.ext):
                     continue
             infile = os.path.join(self.indir, file)
-            outfile = os.path.join(self.outdir, "%s.pickle" % basename)
-            self.addChildTarget(ReadCloneFile(outfile, infile, parsefunc))
-        #self.setFollowOnTarget(ReadCloneAgg(self.outfile, self.outdir))
+            samdir = os.path.join(self.outdir, "%s" % basename)
+            system("mkdir -p %s" % samdir)
+            self.addChildTarget(ReadCloneFile(samdir, infile, parsefunc))
 
 

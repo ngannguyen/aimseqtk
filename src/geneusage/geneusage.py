@@ -41,7 +41,7 @@ class GeneUsageStat(SampleStat):
         self.type2gene2clones = type2gene2clones
         self.type2gene2reads = type2gene2reads
 
-def sample_geneusage_stat(sample, args=None):
+def sample_geneusage_stat(sample, samdir, args=None):
     # gene usage of a specific number
     # initialize usage
     types = ['v', 'd', 'j', 'vj', 'dj']
@@ -52,44 +52,38 @@ def sample_geneusage_stat(sample, args=None):
         type2gene2reads[t] = {}
 
     # get usage
-    for clone in sample.clones:
+    clones = libsample.sample_all_clones(samdir)
+    for clone in clones:
         # update each genetype usage
         genetypes = ['v', 'd', 'j']
         for type in genetypes:
             gene2clones = type2gene2clones[type]
             gene2reads = type2gene2reads[type]
-            attr = type + "genes"
-            genes = clone[attr]
-            for gene in genes:
-                numclone = 1.0/len(genes)
-                freq = clone.freq/len(genes)
-                if gene not in gene2clones:
-                    gene2clones[gene] = numclone
-                    gene2reads[gene] = freq
-                else:
-                    gene2clones[gene] += numclone
-                    gene2reads[gene] += freq
+            gene = clone[type]
+            numclone = 1.0
+            freq = clone.freq
+            if gene not in gene2clones:
+                gene2clones[gene] = numclone
+                gene2reads[gene] = freq
+            else:
+                gene2clones[gene] += numclone
+                gene2reads[gene] += freq
 
         # update gene combination usage
         for type in ['vj', 'dj']:
             gene2clones = type2gene2clones[type]
             gene2reads = type2gene2reads[type]
-            attr0 = type[0] + "genes"
-            attr1 = type[1] + "genes"
-            genes0 = clone[attr0]
-            genes1 = clone[attr1]
-            numcombi = len(genes0) * len(genes1)
-            for g0 in genes0:
-                for g1 in genes1:
-                    numclone = 1.0 / numcombi
-                    freq = clone.freq/ numcombi
-                    combi = "|".join([g0, g1])
-                    if combi not in gene2clones:
-                        gene2clones[combi] = numclone
-                        gene2reads[combi] = freq
-                    else:
-                        gene2clones[combi] += numclone
-                        gene2reads[combi] += freq
+            g0 = clone[type[0]]
+            g1 = clone[type[1]]
+            numclone = 1.0
+            freq = clone.freq
+            combi = "|".join([g0, g1])
+            if combi not in gene2clones:
+                gene2clones[combi] = numclone
+                gene2reads[combi] = freq
+            else:
+                gene2clones[combi] += numclone
+                gene2reads[combi] += freq
     # convert the number of clones into % total clones:
     for type, gene2clones in type2gene2clones.iteritems():
         for gene, numclone in gene2clones.iteritems():
@@ -192,18 +186,20 @@ class GeneUsage(Analysis):
     and follow on job to do geneusage analyses, including makeing
     plots and performing ttests
     '''
-    def __init__(self, samples, outdir, opts):
-        Analysis.__init__(self, samples, outdir, opts)
+    def __init__(self, indir, outdir, opts):
+        Analysis.__init__(self, indir, outdir, opts)
 
     def run(self):
         global_dir = self.getGlobalTempDir()
         gu_dir = os.path.join(global_dir, "geneusage_%s" %
                                      os.path.basename(self.outdir.rstrip('/')))
         system("mkdir -p %s" % gu_dir)
-        for sample in self.samples:
-            outfile = os.path.join(gu_dir, "%s.pickle" % sample.name)
-            self.addChildTarget(libsample.SampleAnalysis(sample, outfile,
-                                                    sample_geneusage_stat))
+        for sam in os.listdir(self.indir):
+            samdir = os.path.join(self.indir, sam)
+            sample = pickle.load(gzip.open(os.path.join(samdir, sam), 'rb'))
+            outfile = os.path.join(gu_dir, "%s.pickle" % sam)
+            self.addChildTarget(libsample.SampleAnalysis(sample, samdir,
+                                            outfile, sample_geneusage_stat))
         self.setFollowOnTarget(GeneUsageAnalyses(gu_dir, self.outdir,
                                                                 self.opts))
 

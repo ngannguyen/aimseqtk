@@ -12,15 +12,20 @@ import sys
 
 import rpy2.robjects as robjs
 import rpy2.robjects.numpy2ri as rpyn
+import gzip
+import cPickle as pickle
+
+from jobTree.scriptTree.target import Target
+from sonLib.bioio import system
 
 import aimseqtk.lib.statcommon as statcommon
+import aimseqtk.lib.sample as libsample
+import aimseqtk.lib.common as libcommon
 
 
-def clone_matrix(samples, sizetype):
+def clone_matrix(colnames, clone2sample2size):
     # Convert into a matrix. Cols = Samples, Rows = Clones, Cells = Sizes
     # Sizes can be count or freq or normfreq (sizetype)
-    clone2sample2size = statcommon.get_clone2samples(samples, sizetype)
-    colnames = [s.name for s in samples]  # sample names
     rownames = clone2sample2size.keys()  # clone ids: v_cdr3_j
     rows = []
     for clone, sam2size in clone2sample2size.iteritems():
@@ -31,7 +36,7 @@ def clone_matrix(samples, sizetype):
                 size = sam2size[sam]
             row.append(size)
         rows.extend(row)
-    return rows, colnames, rownames
+    return rows, rownames
 
 def get_R_matrix(rows, colnames, rownames):
     numcol = len(colnames)
@@ -56,11 +61,9 @@ def get_meta_matrix(group2samples):
     #r, cn, rn = get_meta_matrix(group2samples)
     #pheno_matrix = get_R_matrix(r, cn, rn)
 
-def normalize_MRexp(samples, sizetype):
+def normalize_MRexp(rows, colnames, rownames):
     from rpy2.robjects.packages import importr
     mgs = importr("metagenomeSeq")
-    # get count matrix:
-    rows, colnames, rownames = clone_matrix(samples, sizetype)
     count_matrix = get_R_matrix(rows, colnames, rownames)
     # prepare MRexperiment object:
     mrexp = mgs.newMRexperiment(count_matrix)
@@ -88,5 +91,107 @@ def matrix_to_normcount(matrix, samples):
                 normcount = normcount + rpyn.ri2numpy(nc)[0]
             clone.set_normcount(normcount)
     return samples
+
+#========== job Objs ====
+class CloneMatrixAgg(Target):
+    def __init__(self, sams, indir, outfile):
+        Target.__init__(self)
+        self.sams = sams
+        self.indir = indir
+        self.outfile = outfile
+
+    def run(self):
+        objs = libcommon.load_pickledir(self.indir)
+        colnames = self.sams
+        rows = []
+        rownames = []
+        for obj in objs:
+            rs, rns = clone_matrix(colnames, obj)
+            rows.extend(rs)
+            rownames.extend(rns)
+        pickle.dump((rows, rownames, colnames), gzip.open(self.outfile, 'wb'))
+        system("rm -Rf %s" % self.indir)
+
+class CloneMatrix(Target):
+    '''
+    Convert into a matrix. Cols = Samples, Rows = Clones, Cells = Sizes
+    Pickle matrix to outfile
+    Sizes can be count or freq or normfreq (sizetype)
+    '''
+    def __init__(self, indir, outfile, workdir, sizetype):
+        Target.__init__(self)
+        self.indir = indir
+        self.outfile = outfile
+        self.workdir = workdir
+        self.sizetype = sizetype
+
+    def run(self):
+        # get clone2sample2size
+        sams = os.listdir(self.indir)
+        self.addChildTarget(statcommon.GetClone2Samples(self.indir,
+                                                self.workdir, self.sizetype))
+        self.setFollowOnTarget(CloneMatrixAgg(sams, self.workdir,
+                                                                 self.outfile))
+
+class UpdateNormCount(Target):
+    def __init__(self, infile, outfile, norm_col):
+        Target.__init__(self)
+        self.infile = infile
+        self.outfile = outfile
+        self.norm_col = norm_col
+
+    def run(self):
+        clones = pickle.load(gzip.open(self.infile, "rb"))
+        cloneids = self.norm_col.names
+        for clone in clones:
+            normcount = 0.0
+            id = clone.get_vseqj()
+            assert id in cloneids
+            nc = self.norm_col.rx(id)
+            normcount = rpyn.ri2numpy(nc)[0]
+            clone.normcount = normcount
+        pickle.dump(clones, gzip.open(self.outfile, "wb"))
+
+class NormalizeMRexp2(Target):
+    def __init__(self, matrix_file, samdir, outdir):
+        Target.__init__(self)
+        self.mx_file = matrix_file
+        self.samdir = samdir
+        self.outdir = outdir
+
+    def run(self):
+        (rows, rownames, colnames) = pickle.load(gzip.open(self.mx_file, "rb"))
+        norm_matrix = normalize_MRexp(rows, rownames, colnames)
+        
+        # get samples with normalized counts: 
+        for sam in os.listdir(self.samdir):
+            norm_col = norm_matrix.rx[True, sam]
+            samdir = os.path.join(self.samdir, sam)
+            samout = os.path.join(self.outdir, sam)
+            system("mkdir -p %s" % samout)
+            for vj in os.listdir(samdir):
+                vjin = os.path.join(samdir, vj)
+                vjout = os.patj.join(samout, vj)
+                if vj == sam:  # sample file: out/sam/sam
+                    system("cp %s %s" % (vjin, vjout))
+                else:
+                    self.addChildTarget(UpdateNormCount(vjin, vjout, norm_col))
+        self.setFollowOnTarget(libcommon.CleanupFile(self.mx_file))
+
+class NormalizeMRexp(Target):
+    def __init__(self, indir, outdir, sizetype):
+        Target.__init__(self)
+        self.indir = indir
+        self.outdir = outdir
+        self.sizetype = sizetype
+
+    def run(self):
+        matrix_tempdir = os.path.join(self.outdir, "matrix_temp") 
+        matrix_file = os.path.join(self.outdir, "matrix_info.pickle")
+        system("mkdir -p %s" % matrix_tempdir)
+        self.addChildTarget(CloneMatrix(self.indir, matrix_file,
+                                        matrix_tempdir, self.sizetype))
+        self.setFollowOnTarget(NormalizeMRexp2(matrix_file, self.indir,
+                                               self.outdir))
 
 

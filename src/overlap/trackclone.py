@@ -40,6 +40,7 @@ def check_track_clone_options(parser, options):
 def add_track_clone_options(parser):
     group = OptionGroup(parser, "Clone-tracking options")
     group.add_option('--track_minfreq', dest='track_minfreq', default=0.1,
+                     type='float',
                      help=('Clones with freqs >= track_minfreq are tracked.'))
     group.add_option('--track_clones', dest='clonefile',
                      help=('File that lists clones for tracking'))
@@ -63,23 +64,34 @@ def get_matched_samples(sample, group, groups, group2samples):
         matched_samples.append(group2samples[g][index])
     return matched_samples, index
 
-def clone_get_samples(cloneid, samples, sizetype='count'):
+def clone_get_samples(cloneid, indir, vj, sizetype='count'):
     # get all samples that contain "clone"
     name2size = {}
-    for sample in samples:
-        for clone in sample.clones:
-            ids = clone.get_vjseq_ids()
-            for id in ids:
+    for sam in os.listdir(indir):
+        vjfile = os.path.join(indir, sam, vj)
+        if os.path.exists(vjfile):
+            clones = pickle.load(gzip.open(vjfile, 'rb'))
+            for clone in clones:
+                id = clone.get_vseqj()
                 if id == cloneid:
-                    size = clone[sizetype] / len(ids)
-                    if size == 0 and sizetype == 'count':
-                        size = 1
-                    if sample.name not in name2size:
-                        name2size[sample.name] = size
+                    if sam not in name2size:
+                        name2size[sam] = clone[sizetype]
                     else:
-                        name2size[sample.name] += size
+                        name2size[sam] += clone[sizetype]
                     break
     return name2size
+
+def track_clone_no_matched(clone, sample2size, groups, group2samples):
+    rows = []
+    samples = []
+    for group in groups:
+        row = []
+        for sample in group2samples[group]:
+            if sample in sample2size:
+                samples.append(sample)
+                row.append(sample2size[sample])
+        rows.append(row)
+    return rows, samples
 
 def track_clone(clone, sample2size, groups, group2samples, sample2group):
     # tracking clone's frequences over different "groups" in the group
@@ -105,43 +117,34 @@ def track_clone(clone, sample2size, groups, group2samples, sample2group):
         indices.append(index)
     return rows, indices
 
-def sample_top_clones(sample, minsize, attr='freq'):
+def sample_top_clones(clones, minsize, attr='freq'):
     topclone2size = {}
-    for clone in sample.clones:
-        ids = clone.get_vjseq_ids()
-        size = clone[attr] / len(ids)
-        if size == 0 and attr == 'count':
-            size = 1
+    for clone in clones:
+        id = clone.get_vseqj()
+        size = clone[attr]
         if size >= minsize:
-            for id in ids:
-                if id in topclone2size:
-                    topclone2size[id] += size
-                else:
-                    topclone2size[id] = size
+            if id in topclone2size:
+                topclone2size[id] += size
+            else:
+                topclone2size[id] = size
     return topclone2size
 
-def top_clones(samples, minsize, attr='freq'):
+def top_clones(sampledir, minsize, attr='freq'):
     topclone2name2size = {}
-    for sample in samples:
-        topclone2size = sample_top_clones(sample, minsize, attr)
-        for tc, size in topclone2size.iteritems():
-            if tc not in topclone2name2size:
-                topclone2name2size[tc] = {sample.name: size}
-            else:
-                topclone2name2size[tc][sample.name] = size
+    for sam in os.listdir(sampledir):
+        samdir = os.path.join(sampledir, sam)
+        for vj in os.listdir(samdir):
+            if vj == sam:
+                continue
+            vjfile = os.path.join(samdir, vj)
+            clones = pickle.load(gzip.open(vjfile, 'rb'))
+            topclone2size = sample_top_clones(clones, minsize, attr)
+            for tc, size in topclone2size.iteritems():
+                if tc not in topclone2name2size:
+                    topclone2name2size[tc] = {sam: size}
+                else:
+                    topclone2name2size[tc][sam] = size
     return topclone2name2size
-
-def track_top_clones(samples, minsize, groups, group2samples, sample2group,
-                                                                  attr='freq'):
-    tc2rows = {}
-    tc2indices = {}
-    tc2name2size = top_clones(samples, minsize, attr)
-    for tc in tc2name2size:
-        name2size = clone_get_samples(tc, samples, attr) 
-        rows, indices = track_clone(tc, name2size, groups, group2samples, sample2group)
-        tc2rows[tc] = rows
-        tc2indices[tc] = indices
-    return tc2rows, tc2indices
 
 def tab_track_clones(clone2rows, groups, outfile):
     f = open(outfile, 'w')
@@ -149,8 +152,19 @@ def tab_track_clones(clone2rows, groups, outfile):
     for clone, (rows, indices) in clone2rows.iteritems():
         for i, row in enumerate(rows):
             index = indices[i]
-            rowstr = "\t".join(["%.2e" % c for c in row])
+            #rowstr = "\t".join(["%.2e" % c for c in row])
+            rowstr = "\t".join(["%.4f" % c for c in row])
             f.write("%s\t%d\t%s\n" % (clone, index, rowstr))
+    f.close()
+
+def tab_track_clones_no_matched(clone2rows, groups, outfile):
+    f = open(outfile, 'w')
+    f.write("#Clone\t%s\n" % "\t".join(groups))
+    for clone, (rows, sams) in clone2rows.iteritems():
+        f.write("%s" % clone)
+        for row in rows:
+            f.write("\t%s" % (",".join([str(r) for r in row])))
+        f.write("\n")
     f.close()
 
 #====== JobTree Targets ======
@@ -164,37 +178,58 @@ class TrackClonesAgg(StatAnalyses):
         self.load_indir()
         n2o = self.name2obj
         outfile = os.path.join(self.outdir, "trackclones.txt")
-        tab_track_clones(n2o, opts.groups, outfile)
+        if self.opts.matched:
+            tab_track_clones(n2o, self.opts.groups, outfile)
+        else:
+            tab_track_clones_no_matched(n2o, self.opts.groups, outfile)
         if self.opts.makeplots:
             plotdir = os.path.join(self.outdir, "plots")
             system('mkdir -p %s' % plotdir)
             for clone, (rows, indices) in n2o.iteritems():
                 outbase = os.path.join(plotdir, clone)
-                tcplot.draw_track_clone(clone, rows, self.opts.groups,
+                if self.opts.matched:
+                    tcplot.draw_track_clone(clone, rows, self.opts.groups,
                                         outbase, self.opts)
+                else:
+                    tcplot.draw_track_clone_no_matched(clone, rows,
+                                         self.opts.groups, outbase, self.opts)
 
 class TrackClone(Target):
     '''track a specific clone
     '''
-    def __init__(self, clone, samples, outfile, opts, s2g):
+    def __init__(self, clone, indir, outfile, opts, s2g):
         Target.__init__(self)
         self.clone = clone
-        self.samples = samples
+        self.indir = indir
         self.outfile = outfile
         self.opts = opts
         self.s2g = s2g
 
     def run(self):
-        name2size = clone_get_samples(self.clone, self.samples, attr='freq')
-        rows, indices = track_clone(self.clone, name2size, self.opts.groups,
-                                    self.opts.group2samples, g2s, self.s2g)
-        pickle.dump((rows, indices), gzip.open(self.outfile, "wb"))
+        items = self.clone.split('_')
+        assert len(items) == 3
+        #vj = "%s_%s" % (items[0], items[2])
+        v = items[0]
+        
+        #name2size = clone_get_samples(self.clone, self.indir, vj, 'freq')
+        name2size = clone_get_samples(self.clone, self.indir, v, 'freq')
+        if self.opts.matched:
+            rows, indices = track_clone(self.clone, name2size,
+                                        self.opts.groups,
+                                        self.opts.group2samples, self.s2g)
+            pickle.dump((rows, indices), gzip.open(self.outfile, "wb"))
+        else:
+            print name2size
+            sys.exit()
+            rows, samples = track_clone_no_matched(self.clone, name2size,
+                                     self.opts.groups, self.opts.group2samples)
+            pickle.dump((rows, samples), gzip.open(self.outfile, "wb"))
 
 class TrackClones(Analysis):
     '''Track a number of input clones
     '''
-    def __init__(self, samples, outdir, opts, clones):
-        Analysis.__init__(self, samples, outdir, opts)
+    def __init__(self, indir, outdir, opts, clones):
+        Analysis.__init__(self, indir, outdir, opts)
         self.clones = clones
     
     def run(self):
@@ -206,14 +241,14 @@ class TrackClones(Analysis):
         system("mkdir -p %s" % tc_dir)
         for clone in self.clones:
             outfile = os.path.join(tc_dir, "%s.pickle" % clone)
-            self.addChildTarget(TrackClone(clone, self.samples, outfile, opts,
+            self.addChildTarget(TrackClone(clone, self.indir, outfile, opts,
                                            sample2group))
         self.setFollowOnTarget(TrackClonesAgg(tc_dir, self.outdir, opts))
 
 class TrackTopClones(TrackClones):
     '''Set up children jobs to track top clones
     '''
-    def __init__(self, samples, outdir, opts):
-        topclones = top_clones(samples, opts.track_minfreq)
-        Analysis.__init__(self, samples, outdir, opts, topclones)
+    def __init__(self, indir, outdir, opts):
+        topclones = top_clones(indir, opts.track_minfreq)
+        TrackClones.__init__(self, indir, outdir, opts, topclones)
 

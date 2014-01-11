@@ -44,13 +44,14 @@ class LenDistStat(SampleStat):
         readvec = statcommon.sizedict_to_vec(self.len2reads, True)
         self.median_reads = median(readvec)
 
-def sample_lendist_stat(sample, args=None):
+def sample_lendist_stat(sample, samdir, args=None):
     # lendist with counts and with number of clones
     len2clones = {}
     len2reads = {}
-    for clone in sample.clones:
-        if clone.cdr3aa:
-            l = len(clone.cdr3aa)
+    clones = libsample.sample_all_clones(samdir)
+    for clone in clones:
+        if clone.aa:
+            l = len(clone.aa)
             if l not in len2clones:
                 len2clones[l] = 1
                 len2reads[l] = clone.freq
@@ -112,8 +113,12 @@ class LenDistAnalyses(StatAnalyses):
         plotfmt = self.opts.plotformat
         for attr in attrs:
             plotfile = os.path.join(self.outdir, "%s" % attr)
-            ldplot.draw_lendist(name2obj, attr, plotfile, plotfmt,
-                                      self.opts.dpi)
+            if len(name2obj) >= 20:
+                ldplot.draw_lendist_avr(name2obj, attr, plotfile, plotfmt,
+                                    self.opts.dpi)
+            else:
+                ldplot.draw_lendist(name2obj, attr, plotfile, plotfmt,
+                                    self.opts.dpi)
             # ttests
             g2n = self.opts.group2samples
             if g2n:
@@ -125,8 +130,8 @@ class LenDist(Analysis):
     '''Set up children jobs to compute CDR3 length distribution for
     each sample, and set follow on target to make plots and do ttests
     '''
-    def __init__(self, samples, outdir, opts):
-        Analysis.__init__(self, samples, outdir, opts)
+    def __init__(self, indir, outdir, opts):
+        Analysis.__init__(self, indir, outdir, opts)
 
     def run(self):
         opts = self.opts
@@ -134,9 +139,11 @@ class LenDist(Analysis):
         ld_dir = os.path.join(global_dir, "lendist_%s" %
                                      os.path.basename(self.outdir.rstrip('/')))
         system("mkdir -p %s" % ld_dir)
-        for sample in self.samples:
-            outfile = os.path.join(ld_dir, "%s.pickle" % sample.name)
-            self.addChildTarget(libsample.SampleAnalysis(sample, outfile,
-                                                          sample_lendist_stat))
+        for sam in os.listdir(self.indir):
+            samdir = os.path.join(self.indir, sam)
+            sample = pickle.load(gzip.open(os.path.join(samdir, sam), 'rb'))
+            outfile = os.path.join(ld_dir, "%s.pickle" % sam)
+            self.addChildTarget(libsample.SampleAnalysis(sample, samdir,
+                                                 outfile, sample_lendist_stat))
         self.setFollowOnTarget(LenDistAnalyses(ld_dir, self.outdir, opts))
 

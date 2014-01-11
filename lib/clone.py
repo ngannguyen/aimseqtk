@@ -6,6 +6,42 @@
 Object represents a unique clonotype and related functions
 '''
 
+
+class Cdr3Clone():
+    def __init__(self, count, nuc, v, j, d='', aa=None, id=None, sample=None,
+                                                    normcount=None, freq=None):
+        self.count = count
+        self.nuc = nuc
+        self.v = v
+        self.j = j
+        self.d = d
+        self.id = id
+        self.sample = sample
+        self.freq = freq
+        self.aa = aa
+        if normcount:
+            self.normcount = normcount
+        else:
+            self.normcount = count
+         
+    def __getitem__(self, attr):
+        if attr not in self.__dict__:
+            raise KeyError("Cdr3Clone does not have attribute %s" % attr)
+        return self.__dict__[attr]
+
+    def __setitem__(self, attr, val):
+        self.__dict__[attr] = val
+
+    def getitems(self):
+        return self.__dict__.keys()
+
+    def get_vseqj(self, nuc=False):
+        if nuc:
+            seq = self.nuc
+        else:
+            seq = self.aa
+        return "%s_%s_%s" % (self.v, seq, self.j)
+
 class Clone():
     def __init__(self, count, freq, nuc, vgenes, jgenes, dgenes=[],
                  valleles=[], dalleles=[], jalleles=[], 

@@ -9,16 +9,26 @@ Common functions
 import os
 import sys
 import copy
+import re
 import numbers
 import gzip
 import cPickle as pickle
 from optparse import OptionParser
 
 from jobTree.scriptTree.target import Target
+from sonLib.bioio import system
 
 
 class InputError(Exception):
     pass
+
+def get_gene_number(gene):
+    items = re.split('\D+', gene)
+    nums = []
+    for i in items:
+        if i != '':
+            nums.append(int(i))
+    return nums
 
 def get_cumulative(vals, forward=False):
     if forward:
@@ -180,7 +190,7 @@ def get_val2key_1to1(key2vals):
     val2key = {}
     for k, vals in key2vals.iteritems():
         for v in vals:
-            if v in val2key:
+            if v in val2key and k != val2key[v]:
                 raise InputError(("%s belongs to multiple groups: " % v
                                   + "%s, %s" % (k, val2key[v]))) 
             val2key[v] = k
@@ -278,9 +288,9 @@ class Analysis(Target):
     '''Parent object of each type of analyses, e.g Geneusage, Lendist,
     Similarity, Diversity etc
     '''
-    def __init__(self, samples, outdir, opts=None, *args):
+    def __init__(self, indir, outdir, opts=None, *args):
         Target.__init__(self)
-        self.samples = samples
+        self.indir = indir
         self.outdir = outdir
         self.opts = opts
         self.args = args
@@ -299,6 +309,26 @@ class StatAnalyses(Target):
     def load_indir(self):
         self.name2obj = load_pickledir_to_dict(self.indir)
 
+class CleanupDir(Target):
+    '''Remove input directory
+    '''
+    def __init__(self, indir):
+        Target.__init__(self)
+        self.indir = indir
+
+    def run(self):
+        system("rm -Rf %s" % self.indir)
+
+class CleanupFile(Target):
+    '''Remove input file
+    '''
+    def __init__(self, infile):
+        Target.__init__(self)
+        self.infile = infile
+
+    def run(self):
+        system("rm -f %s" % self.infile)
+
 #============ LATEX related function ============
 def pretty_int(number):
     numstr = str(number)
@@ -312,8 +342,11 @@ def pretty_int(number):
 def pretty_float(num):
     if num == 0:
         return "0"
-    else:
+    elif num < 0.001:
         return "%.2e" % num
+    else:
+        return "%.3f" % num
+        #return "%.2e" % num
 
 def tab_header(f, colnames):
     f.write("\\begin{table}\n")
