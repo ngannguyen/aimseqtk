@@ -212,10 +212,28 @@ def group_vector(names, name2obj, attr=None, func=None, func_args=None):
             vec.append(val)
     return vec
 
+def get_matrix_bounds(objs, attr=None, func=None, args=None):
+    min_val = float('inf')
+    max_val = float('-inf')
+    for obj in objs:
+        vec = []
+        if obj:
+            if attr:
+                vec.append(obj[attr])
+            elif func:
+                vec.append(func(obj, args))
+            else:
+                vec.append(obj)
+        min_val = min(min_val, min(vec))
+        max_val = max(max_val, max(vec))
+    return min_val, max_val
+
 def pair_matrix(rnames, cnames, pair2obj, attr=None, sep="_", func=None, args=None):
     # get list of list (matrix) from pairwise comparisons
     # sep = separator/delimitor
     rows = []
+    min_val, max_val = get_matrix_bounds(pair2obj.values(), attr, func, args)
+    empty_cell = 0.9 * min_val
     for n1 in rnames:  # row
         row = []
         for n2 in cnames:  # column
@@ -234,7 +252,8 @@ def pair_matrix(rnames, cnames, pair2obj, attr=None, sep="_", func=None, args=No
                 else:
                     row.append(obj)
             else:
-                row.append(0.0)
+                row.append(empty_cell)
+                #row.append(0.0)
         rows.append(row)
     return rows
 
@@ -298,6 +317,8 @@ def ttest_allpairs(group2names, name2obj, matched, attr=None, func=None,
     return pair2stats, group2mean
 
 def ttest_pair(vec1, vec2, matched=False):
+    if not vec1 or not vec2:
+        return 2, 2
     ttest = ttest_ind
     if matched and len(vec1) == len(vec2):
         #assert len(vec1) == len(vec2)

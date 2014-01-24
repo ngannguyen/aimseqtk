@@ -9,6 +9,7 @@ Parse Sequenta data files (sequentainc.com)
 import os
 import sys
 import re
+import random
 
 from aimseqtk.lib.clone import Clone
 import aimseqtk.lib.common as libcommon
@@ -35,6 +36,15 @@ def sequenta_getaa(nuc):
     else:
         aa = libcommon.nt2aa(nuc)
     return aa
+
+def get_j_groups(jgenes):
+    # return the groups (1 or 2 or both) that the jgenes are in
+    jgroups = []
+    for jgene in jgenes:
+        group = jgene.lstrip('TRBJ').split('-')[0]
+        if group not in jgroups:
+            jgroups.append(group)
+    return jgroups
 
 def sequenta_parseline(line, index2col):
     items = line.strip("\n").split('\t')
@@ -85,6 +95,13 @@ def sequenta_parseline(line, index2col):
                     dgenes.append(dgene)
             clone.dgenes = dgenes
             clone.dalleles = dalleles
+    if not clone.dgenes:  # no dgenes info
+        jgroups = get_j_groups(clone.jgenes)
+        if ['1'] == jgroups:
+            clone.dgenes = ['TRBD1']
+        else:
+            clone.dgenes = [random.choice(['TRBD1', 'TRBD2'])]
+
     if 'V_Segment_Major_Allele' in col2val:
         clone.valleles = col2val['V_Segment_Major_Allele'].split('; ')
     if 'J_Segment_Major_Allele' in col2val:
@@ -129,14 +146,14 @@ def sequenta_parseline(line, index2col):
         if 'N_Bases_adjacent_V' in col2val:
             d5ins = col2val['N_Bases_adjacent_V']
             if not d5ins.startswith('-') and d5ins not in ['', 'NAN']:
-                clone.firstdpos = clone.lastvpos + libcommon.soft_int(d5ins)
+                clone.firstdpos = clone.lastvpos + int(d5ins) + 1
     if 'J_Segment_Extension_Length' in col2val:
         jins = libcommon.soft_int(col2val['J_Segment_Extension_Length'])
         clone.firstjpos = len(clone.nuc) - jins
         if 'N_Bases_adjacent_J' in col2val:
             d3ins = col2val['N_Bases_adjacent_J']
             if not d3ins.startswith('-') and d3ins not in ['', 'NAN']:
-                clone.lastdpos = clone.firstjpos - libcommon.soft_int(d3ins) - 1
+                clone.lastdpos = clone.firstjpos - int(d3ins) - 1
 
     # Deletions:
     if 'V_Segment_Deletion_Length' in col2val:
@@ -148,4 +165,21 @@ def sequenta_parseline(line, index2col):
         if not jdel.startswith('-') and jdel not in ['', 'NAN']:
             clone.jdel = libcommon.soft_int(jdel)
     
+    # Special treatment for D info:
+    d2fulllen = {'TRBD1': 12, 'TRBD2': 16}
+    if 'D_Segment_length' in col2val:
+        dgene = clone.dgenes[0]
+        dfulllen = d2fulllen[dgene]
+        dlen = col2val['D_Segment_length']
+        if not dlen.startswith('-') and dlen not in ['', 'NAN']:
+            ddel = dfulllen - int(dlen)
+            clone.d5del = ddel / 2.0
+            clone.d3del = ddel - clone.d5del
+        else:  # all D was deleted
+            clone.d5del = dfulllen / 2
+            clone.d3del = dfulllen - clone.d5del
+            ndn = clone.firstjpos - clone.lastvpos
+            clone.firstdpos = clone.lastvpos + ndn/2 + 1
+            clone.lastdpos = clone.firstdpos - 1
+
     return clone

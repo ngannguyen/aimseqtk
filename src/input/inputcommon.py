@@ -187,12 +187,12 @@ def check_input_options(parser, options):
 
     my_analyses = ['diversity', 'similarity', 'clonesize', 'lendist', 
                    'geneusage', 'aausage', 'overlap', 'trackclone',
-                   'prelim', 'db']
+                   'prelim', 'db', 'model']
     analyses = []
     if options.analyses:
         analyses = options.analyses.split(',')
     if 'all' in analyses:
-        analyses = my_analyses[:-2]
+        analyses = my_analyses[:-3]
         #if not options.matched:
         #    analyses.remove('trackclone')
     else:

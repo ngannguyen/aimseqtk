@@ -331,7 +331,7 @@ class FilterSample(Target):
         self.setFollowOnTarget(libcommon.CleanupFile(self.samplefile))
 
 class SplitClonesByV(Target):
-    '''
+    '''Split clones by V, one file per V
     '''
     def __init__(self, infile, outdir, sample_name=None):
         Target.__init__(self)
@@ -472,7 +472,7 @@ class MakeDbSample(Target):
         tempdir = os.path.join(global_dir, "split_by_vj", name)
         system("mkdir -p %s" % tempdir)
         
-        for file in os.listdir(self.indir):  # each batch, split clone by VJ
+        for file in os.listdir(self.indir):  # each batch, split clone by V
             infile = os.path.join(self.indir, file)
             child_outdir = os.path.join(tempdir, os.path.splitext(file)[0])
             system("mkdir -p %s" % child_outdir)

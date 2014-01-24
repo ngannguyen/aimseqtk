@@ -8,13 +8,20 @@ Object represents a unique clonotype and related functions
 
 
 class Cdr3Clone():
-    def __init__(self, count, nuc, v, j, d='', aa=None, id=None, sample=None,
-                                                    normcount=None, freq=None):
+    def __init__(self, count, nuc, v, j, d='', vdel=None, jdel=None,
+                 d5del=None, d3del=None, vdins='', djins='', aa=None, id=None,
+                 sample=None, normcount=None, freq=None):
         self.count = count
         self.nuc = nuc
         self.v = v
         self.j = j
         self.d = d
+        self.vdel = vdel
+        self.jdel = jdel
+        self.d5del = d5del
+        self.d3del = d3del
+        self.vdins = ''
+        self.djins = ''
         self.id = id
         self.sample = sample
         self.freq = freq
@@ -70,7 +77,7 @@ class Clone():
         # lastvpos, firstdpos, lastdpos and firstjpos are relative to "nuc"
         # all are inclusive, base 0
         self.lastvpos = lastvpos  # last position of V segment
-        self.fistdpos = firstdpos  # first position of D segment
+        self.firstdpos = firstdpos  # first position of D segment
         self.lastdpos = lastdpos  # last position of D segment
         self.firstjpos = firstjpos  # first position of J segment
         self.vdel = vdel  # number of bases of the vsegment got deleted

@@ -219,8 +219,6 @@ class TrackClone(Target):
                                         self.opts.group2samples, self.s2g)
             pickle.dump((rows, indices), gzip.open(self.outfile, "wb"))
         else:
-            print name2size
-            sys.exit()
             rows, samples = track_clone_no_matched(self.clone, name2size,
                                      self.opts.groups, self.opts.group2samples)
             pickle.dump((rows, samples), gzip.open(self.outfile, "wb"))

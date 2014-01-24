@@ -22,6 +22,18 @@ from sonLib.bioio import system
 class InputError(Exception):
     pass
 
+def union_lists(lists):
+    assert lists is not None
+    numlist = len(lists)
+    if numlist == 0:
+        return []
+    elif numlist == 1:
+        return lists[0]
+    left_ulist = union_lists(lists[:numlist/2])
+    right_ulist = union_lists(lists[numlist/2:])
+    ulist = list(set(left_ulist).union(set(right_ulist)))
+    return ulist
+
 def get_gene_number(gene):
     items = re.split('\D+', gene)
     nums = []
@@ -29,6 +41,9 @@ def get_gene_number(gene):
         if i != '':
             nums.append(int(i))
     return nums
+
+def sort_by_gene_number(genes):
+    return sorted(genes, key=lambda g: get_gene_number(g))
 
 def get_cumulative(vals, forward=False):
     if forward:

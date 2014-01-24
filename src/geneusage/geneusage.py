@@ -103,6 +103,7 @@ def get_genes(stats, genetype):
         for g in currgenes:
             if g not in genes:
                 genes.append(g)
+    genes = sorted(genes, key=lambda g: libcommon.get_gene_number(g))
     return genes
 
 def get_geneusage(stat, args):
@@ -130,6 +131,48 @@ def geneusage_ttests(attr, type, outfile, g2n, name2obj, matched, pcutoff):
                                                  func_args=(attr, type, gene))
         statcommon.ttest_write(f, gene, pair2tp, group2mean, pcutoff)
     f.close()
+
+def geneusage_table(attr, type, outfile, g2n, n2obj, genes):
+    fullattr = "type2gene2%s" % attr
+    f = open(outfile, 'w')
+    f.write("Sample\t%s\n" % ("\t".join([g.lstrip("TRB") for g in genes])))
+    for g in sorted(g2n.keys()): 
+        names = sorted(g2n[g])
+        cumul_freqs = [0.0] * len(genes)
+        for name in names:
+            gene2freq = n2obj[name][fullattr][type]
+            freqs = []
+            for i, gene in enumerate(genes):
+                if gene in gene2freq:
+                    cumul_freqs[i] += gene2freq[gene]
+                    freqs.append(gene2freq[gene])
+                else:
+                    freqs.append(0.0)
+            pretty_freqs = [libcommon.pretty_float(freq) for freq in freqs]
+            f.write("%s\t%s\n" % (name, "\t".join(pretty_freqs)))
+        groupsize = len(names)
+        if groupsize > 0:
+            avr = [libcommon.pretty_float(freq/groupsize) for freq in cumul_freqs]
+        else:
+            avr = ['0'] * groupsize
+        f.write("%s_Avr\t%s\n" % (g, "\t".join(avr)))
+    f.close()
+
+class GeneUsageTable(Target):
+    '''Write the sample gene usage. Columns=Genes, Rows=Samples
+    '''
+    def __init__(self, attr, type, outfile, g2n, name2obj, genes):
+        Target.__init__(self)
+        self.attr = attr
+        self.type = type
+        self.outfile = outfile
+        self.g2n = g2n
+        self.name2obj = name2obj
+        self.genes = genes
+
+    def run(self):
+        geneusage_table(self.attr, self.type, self.outfile, self.g2n,
+                        self.name2obj, self.genes)
 
 class GeneUsageTtests(Target):
     '''Perform ttests for a specific gene category (v, d, j, vj or dj)
@@ -160,18 +203,28 @@ class GeneUsageAnalyses(StatAnalyses):
         self.load_indir()
         attrs = ['clones', 'reads']
         types = ['v', 'd', 'j', 'vj', 'dj']
+        type2genes = {}
+        for type in types:
+            type2genes[type] = get_genes(self.name2obj.values(), type)
         
         g2n = self.opts.group2samples
         for attr in attrs:
+            # print usage tables, cols = samples, rows = genes
+            tabdir = os.path.join(self.outdir, "%s_usage_tables" % attr)
+            system("mkdir -p %s" % tabdir)
+            for type in types:
+                tabfile = os.path.join(tabdir, "%s.txt" % type)
+                self.addChildTarget(GeneUsageTable(attr, type, tabfile,
+                                         g2n, self.name2obj, type2genes[type]))
             # draw usage plots
             if self.opts.makeplots:
                 plotdir = os.path.join(self.outdir, "%s_plots" % attr)
                 system("mkdir -p %s" % plotdir)
                 for type in types:
                     plotfile = os.path.join(plotdir, type)
-                    genes = get_genes(self.name2obj.values(), type)
                     self.addChildTarget(guplot.GeneUsagePlot(self.name2obj,
-                                       attr, type, genes, plotfile, self.opts))
+                                        attr, type, type2genes[type], plotfile,
+                                        self.opts))
             # ttests
             if g2n:
                 ttestdir = os.path.join(self.outdir, "%s_ttests" % attr)

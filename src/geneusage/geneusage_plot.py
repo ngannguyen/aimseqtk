@@ -39,7 +39,7 @@ def draw_gene_usage(name2obj, attr, type, outbase, genes, opts):
     axes, fig, pdf = drawcommon.get_axes(outfile=outbase,
                                          outfmt=opts.plotformat, dpi=opts.dpi)
     #genes = sorted(genes)
-    genes = sorted(genes, key=lambda g: libcommon.get_gene_number(g))
+    genes = libcommon.sort_by_gene_number(genes)
     xdata = range(len(genes))
     group2line = {}
     lines = []
@@ -75,7 +75,8 @@ def draw_gene_usage_avr(name2obj, attr, type, outbase, genes, opts):
     axes, fig, pdf = drawcommon.get_axes(outfile=outbase,
                                          outfmt=opts.plotformat, dpi=opts.dpi)
     #genes = sorted(genes)
-    genes = sorted(genes, key=lambda g: libcommon.get_gene_number(g))
+    #genes = sorted(genes, key=lambda g: libcommon.get_gene_number(g))
+    genes = libcommon.sort_by_gene_number(genes)
     xdata = range(len(genes))
     #xoffset = 0.05
     g2ydata = {}
