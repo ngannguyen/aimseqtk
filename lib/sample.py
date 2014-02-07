@@ -161,6 +161,16 @@ def filter_by_status(clones, productive=True):
     return newclones
 
 #======= Split clones by VJ ===============
+def clone_get_recomb_info(cdr3clone, clone):
+    cdr3clone.vdel = clone.vdel
+    cdr3clone.jdel = clone.jdel
+    cdr3clone.d5del = clone.d5del
+    cdr3clone.d3del = clone.d3del
+    vd_nts = clone.nuc[clone.lastvpos: clone.firstdpos]  # include the last V
+    cdr3clone.vdins = vd_nts
+    dj_nts = clone.nuc[clone.lastdpos + 1: clone.firstjpos + 1]  # include lastJ
+    cdr3clone.djins = dj_nts
+
 def split_clones_by_vj(clones, sample_name=None):
     v2j2clones = {}
     for clone in clones:
@@ -176,8 +186,8 @@ def split_clones_by_vj(clones, sample_name=None):
         normcount = clone.normcount/numcombi
         freq = clone.freq/numcombi
 
-        for v in clone.vgenes:
-            for j in clone.jgenes:
+        for vindex, v in enumerate(clone.vgenes):
+            for jindex, j in enumerate(clone.jgenes):
                 cdr3clones = []
                 if not clone.dgenes:
                     cdr3clone = libclone.Cdr3Clone(count, nuc, v, j, '',
@@ -185,11 +195,13 @@ def split_clones_by_vj(clones, sample_name=None):
                                                    normcount, freq)
                     cdr3clones.append(cdr3clone)
                 else:
-                    for d in clone.dgenes:
+                    for dindex, d in enumerate(clone.dgenes):
                         cdr3clone = libclone.Cdr3Clone(count, nuc, v, j, d,
                                                     clone.cdr3aa, sample_name,
                                                     normcount, freq)
                         cdr3clones.append(cdr3clone)
+                        if vindex == 0 and jindex == 0 and dindex == 0:
+                            clone_get_recomb_info(cdr3clone, clone)
                 if v not in v2j2clones:
                     v2j2clones[v] = {j: cdr3clones}
                 elif j not in v2j2clones[v]:

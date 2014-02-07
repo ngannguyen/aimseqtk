@@ -89,13 +89,13 @@ class RecombModel:
 
     def update_attr2(self, attr, key1, key2, size):
         assert attr in ['v2del', 'j2del', 'd2del']
-        if isinstance(key2, int):
-            if key1 not in self[attr]:
-                self[attr][key1] = {key2: size}
-            elif key2 not in self[attr][key1]:
-                self[attr][key1][key2] = size
-            else:
-                self[attr][key1][key2] += size
+        #if isinstance(key2, int):
+        if key1 not in self[attr]:
+            self[attr][key1] = {key2: size}
+        elif key2 not in self[attr][key1]:
+            self[attr][key1][key2] = size
+        else:
+            self[attr][key1][key2] += size
 
 ####################### Functions ############################
 def dict_convert_to_freq(mydict):
@@ -190,7 +190,7 @@ def write_attr2(mydict, outfile):
             if r not in rows:
                 rows.append(r)
     for row in sorted(rows):
-        f.write("%s" % row)
+        f.write("%s" % str(row))
         for col in cols:
             if row in mydict[col]:
                 f.write("\t%f" % mydict[col][row])

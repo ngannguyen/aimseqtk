@@ -8,9 +8,9 @@ Object represents a unique clonotype and related functions
 
 
 class Cdr3Clone():
-    def __init__(self, count, nuc, v, j, d='', vdel=None, jdel=None,
-                 d5del=None, d3del=None, vdins='', djins='', aa=None, id=None,
-                 sample=None, normcount=None, freq=None):
+    def __init__(self, count, nuc, v, j, d='', aa=None, sample=None,
+                 normcount=None, freq=None, vdel=None, jdel=None, d5del=None,
+                 d3del=None, vdins='', djins='', id=None):
         self.count = count
         self.nuc = nuc
         self.v = v

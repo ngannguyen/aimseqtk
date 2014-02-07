@@ -19,8 +19,54 @@ from jobTree.scriptTree.target import Target
 from sonLib.bioio import system
 
 
+CODON2AA = {
+'TTT': 'F', 'TCT': 'S', 'TAT': 'Y', 'TGT': 'C',
+'TTC': 'F', 'TCC': 'S', 'TAC': 'Y', 'TGC': 'C',
+'TTA': 'L', 'TCA': 'S', 'TAA': 'Z', 'TGA': 'Z',
+'TTG': 'L', 'TCG': 'S', 'TAG': 'Z', 'TGG': 'W',
+'CTT': 'L', 'CCT': 'P', 'CAT': 'H', 'CGT': 'R',
+'CTC': 'L', 'CCC': 'P', 'CAC': 'H', 'CGC': 'R',
+'CTA': 'L', 'CCA': 'P', 'CAA': 'Q', 'CGA': 'R',
+'CTG': 'L', 'CCG': 'P', 'CAG': 'Q', 'CGG': 'R',
+'ATT': 'I', 'ACT': 'T', 'AAT': 'N', 'AGT': 'S', 
+'ATC': 'I', 'ACC': 'T', 'AAC': 'N', 'AGC': 'S',
+'ATA': 'I', 'ACA': 'T', 'AAA': 'K', 'AGA': 'R', 
+'ATG': 'M', 'ACG': 'T', 'AAG': 'K', 'AGG': 'R', 
+'GTT': 'V', 'GCT': 'A', 'GAT': 'D', 'GGT': 'G',
+'GTC': 'V', 'GCC': 'A', 'GAC': 'D', 'GGC': 'G',
+'GTA': 'V', 'GCA': 'A', 'GAA': 'E', 'GGA': 'G', 
+'GTG': 'V', 'GCG': 'A', 'GAG': 'E', 'GGG': 'G' 
+}
+
 class InputError(Exception):
     pass
+
+def split_clones_by_j(clones):
+    j2clones = {}
+    for c in clones:
+        if c.vdel is None:
+            continue
+        if c.j not in j2clones:
+            j2clones[c.j] = [c]
+        else:
+            j2clones[c.j].append(c)
+    return j2clones
+
+def split_clonenames_by_vj(clones):
+    v2j2seqs = {}
+    for c in clones:
+        items = c.split('_')
+        assert len(items) == 3
+        v = items[0]
+        seq = items[1]
+        j = items[2]
+        if v not in v2j2seqs:
+            v2j2seqs[v] = {j: [seq]}
+        elif j not in v2j2seqs[v]:
+            v2j2seqs[v][j] = [seq]
+        else:
+            v2j2seqs[v][j].append(seq)
+    return v2j2seqs
 
 def union_lists(lists):
     assert lists is not None
@@ -215,11 +261,23 @@ def read_list(file):
     items = []
     f = open(file, 'r')
     for line in f:
-        line = line.strip()
+        line = line.rstrip('\n')
         if len(line) > 0 and line[0] != '#':
             items.append(line)
     f.close()
     return items
+
+def read_dict(file, sep=None):
+    k2v = {}
+    f = open(file, 'r')
+    for line in f:
+        line = line.rstrip('\n')
+        if len(line) > 0 and line[0] != '#':
+            items = line.split() if sep is None else line.split(sep)
+            if len(items) == 2:
+                k2v[items[0]] = items[1]
+    f.close()
+    return k2v
 
 def check_options_dir(dir):
     if not os.path.exists(dir):
@@ -246,29 +304,36 @@ def get_index2item(line):
 
 def nt2aa(nt):
     # Translate nucleotide sequence to amino acid sequence
-    codon2aa = {
-    'TTT': 'F', 'TCT': 'S', 'TAT': 'Y', 'TGT': 'C',
-    'TTC': 'F', 'TCC': 'S', 'TAC': 'Y', 'TGC': 'C',
-    'TTA': 'L', 'TCA': 'S', 'TAA': 'Z', 'TGA': 'Z',
-    'TTG': 'L', 'TCG': 'S', 'TAG': 'Z', 'TGG': 'W',
-    'CTT': 'L', 'CCT': 'P', 'CAT': 'H', 'CGT': 'R',
-    'CTC': 'L', 'CCC': 'P', 'CAC': 'H', 'CGC': 'R',
-    'CTA': 'L', 'CCA': 'P', 'CAA': 'Q', 'CGA': 'R',
-    'CTG': 'L', 'CCG': 'P', 'CAG': 'Q', 'CGG': 'R',
-    'ATT': 'I', 'ACT': 'T', 'AAT': 'N', 'AGT': 'S', 
-    'ATC': 'I', 'ACC': 'T', 'AAC': 'N', 'AGC': 'S',
-    'ATA': 'I', 'ACA': 'T', 'AAA': 'K', 'AGA': 'R', 
-    'ATG': 'M', 'ACG': 'T', 'AAG': 'K', 'AGG': 'R', 
-    'GTT': 'V', 'GCT': 'A', 'GAT': 'D', 'GGT': 'G',
-    'GTC': 'V', 'GCC': 'A', 'GAC': 'D', 'GGC': 'G',
-    'GTA': 'V', 'GCA': 'A', 'GAA': 'E', 'GGA': 'G', 
-    'GTG': 'V', 'GCG': 'A', 'GAG': 'E', 'GGG': 'G' 
-    }
     aaseq = ''
     for i in xrange(0, len(nt)/3):
         codon = nt[i*3: i*3+3].upper()
-        aaseq = aaseq + codon2aa[codon]
+        aaseq = aaseq + CODON2AA[codon]
     return aaseq
+
+def aa2codons(aa):
+    codons = []
+    for codon, a in CODON2AA.iteritems():
+        if a == aa:
+            codons.append(codon)
+    return codons
+
+def aa2codons_withstart(aa, start):
+    codons = aa2codons[aa]
+    codons2 = []
+    for c in codons:
+        if re.match(start, c):
+            codons2.append(c)
+    return codons2
+
+def aa2codons_withend(aa, end):
+    codons = aa2codons[aa]
+    if not end:
+        return codons
+    codons2 = []
+    for c in codons:
+        if len(c) >= len(end) and c[-1 * len(end): ] == end:
+            codons2.append(c)
+    return codons2
 
 def rc(nt):
     #Return a reverse complement of the input sequence.

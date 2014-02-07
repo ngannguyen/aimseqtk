@@ -18,8 +18,10 @@ from jobTree.scriptTree.target import Target
 from sonLib.bioio import system
 
 import aimseqtk.lib.common as lcommon
+import aimseqtk.lib.statcommon as statcommon
 import aimseqtk.lib.drawcommon as drawcommon
 from aimseqtk.src.recomb.recomb_model import RecombModel
+from aimseqtk.lib.common import pretty_float as pfloat
 
 
 def union_models(models):
@@ -92,7 +94,8 @@ def diff_sample_model2(in_model, models, attr):
         k_to_k2diffs[k] = k2diffs
     return k_to_k2diffs
 
-def diff_plot(x2yvec, outbase, xlabels=[], label=''):
+def diff_plot(x2yvec, outbase, xlabels=[], label='', xmin=None, xmax=None,
+              ymin=None, ymax=None, ylabel=''):
     if not x2yvec:
         return
     axes, fig, pdf = drawcommon.get_axes(outfile=outbase)
@@ -103,18 +106,67 @@ def diff_plot(x2yvec, outbase, xlabels=[], label=''):
     axes.boxplot(ydata)
     drawcommon.set_grid(axes)
     drawcommon.edit_spine(axes)
+    # Set limits 
+    if xmin:
+        if isinstance(xlabels[0], numbers.Number):
+            xmin += xdata[0] - xlabels[0] + 1
+    else:
+        xmin = -0.5
+    if xmax:
+        if isinstance(xlabels[0], numbers.Number):
+            xmax += xdata[0] - xlabels[0] + 1
+    else:
+        xmax = len(xlabels) + 0.5
+    
     if (isinstance(xlabels[0], numbers.Number) or
         isinstance(xlabels[0], tuple)):
         xlabels = [str(x) for x in xlabels]
-    xlabels = [x.lstrip("TRB") for x in xlabels]
+    xlabels = [x.replace("TRB", "") for x in xlabels]
     drawcommon.set_xticks(axes, [x + 1 for x in xdata], xlabels)
-    axes.set_xlim(-0.5, len(xlabels) + 0.5)
-    #axes.set_ylim(bottom=-0.005)
+    
+    axes.plot([xmin, xmax], [0, 0], ls='-', color='#252525')
+    axes.set_xlim(xmin, xmax)
+
+    if ymin and ymax:
+        axes.set_ylim(ymin, ymax)
+    elif ymin:
+        axes.set_ylim(bottom=-0.005)
+    
     drawcommon.adjust_ticklabels(axes, xrotation=75)
-    drawcommon.set_labels(axes, xlabel=label,
-                          ylabel="Difference in %s" % label)
+    if not ylabel:
+        ylabel = "Difference in %s" % label
+    drawcommon.set_labels(axes, xlabel=label, ylabel=ylabel)
     drawcommon.write_image(fig, pdf, 'pdf', outbase, 300) 
     
+def shorten_dj_labels(djs):
+    shortdjs = []
+    for (d, j) in djs:
+        shortd = d.lstrip('TRB')
+        shortj = j.lstrip('TRB')
+        shortdj = "%s_%s" % (shortd, shortj)
+        shortdjs.append(shortdj)
+    return sorted(shortdjs)
+
+def model_diff_signi_test(objs1, objs2, outdir, maxeval=0.005):
+    if len(objs1) == 0 or len(objs2) == 0:
+        return
+    obj0 = objs1[0]
+    for attr in obj0.get_attrs_depth1():
+        outfile = os.path.join(outdir, attr)
+        f = open(outfile, 'w')
+        f.write("#Key\tstatistic\te_value\tGroup1 +/- Std1\tGroup2 +/- Std2\n")
+        for k in obj0[attr]:
+            v1 = [obj[attr][k] for obj in objs1]
+            v2 = [obj[attr][k] for obj in objs2]
+            sval, pval = statcommon.ttest_pair(v1, v2, False, 'ranksums') 
+            eval = pval * len(obj0[attr])
+            if eval <= maxeval:
+                f.write("%s\t%s\t%s\t%s +/- %s\t%s +/- %s\n" % (k,
+                           pfloat(sval), pfloat(eval), pfloat(np.mean(v1)),
+                           pfloat(np.std(v1)), pfloat(np.mean(v2)),
+                           pfloat(np.std(v2))))
+        f.close()
+
 def model_diff(indir1, indir2, outdir):
     # indir1 contains sam1_model.pickle, sam2_model.pickle ...
     # indir2: similarly to indir1
@@ -124,12 +176,29 @@ def model_diff(indir1, indir2, outdir):
     objs2 = lcommon.load_pickledir(indir2)
     union_models(objs1 + objs2)
     
+    # statistic for each attr for differential usage:
+    statsdir = os.path.join(outdir, "stat_tests")
+    system("mkdir -p %s" % statsdir)
+    model_diff_signi_test(objs1, objs2, statsdir)
+    #if True:  # HACK
+    #    return
+
     med1 = model_get_median(objs1)
     #med2 = model_get_median(objs2)
     for attr in med1.get_attrs_depth1():
         outbase1 = os.path.join(outdir, "%s_%s_cmp2_%s" % (attr, name2, name1))
         k2diffs1 = diff_sample_model(med1, objs2, attr)
-        diff_plot(k2diffs1, outbase1)
+        gene_attrs = ['v', 'd', 'j', 'dj']
+        if attr in gene_attrs:
+            if attr == 'dj':
+                xlabels = sorted(k2diffs1.keys())
+            else:
+                xlabels = lcommon.sort_by_gene_number(k2diffs1.keys())
+            diff_plot(k2diffs1, outbase1, xlabels, attr.upper(), ymin=-0.1,
+                                                                 ymax=0.1)
+        else:
+            diff_plot(k2diffs1, outbase1, label=attr.upper(), xmin=-0.5,
+                      xmax=30.5, ymin=-0.02, ymax=0.05)
         #outbase2 = os.path.join(outdir, "%s_%s_cmp2_%s" % (attr, name1, name2))
         #k2diffs2 = diff_sample_model(med2, objs1, attr)
         #diff_plot(k2diffs2, outbase2)
@@ -138,8 +207,13 @@ def model_diff(indir1, indir2, outdir):
         for k, k2diffs1 in k_k2diffs1.iteritems():
             if not isinstance(k, str):
                 k = str(k)
-            outbase1 = os.path.join(outdir, "%s_%s_%s_cmp2_%s" % (attr, k, name2, name1))
-            diff_plot(k2diffs1, outbase1)
+            outbase1 = os.path.join(outdir, "%s_%s_%s_cmp2_%s" %
+                                            (attr, k, name2, name1))
+            if attr in ['v2del', 'j2del', 'd2del']:
+                diff_plot(k2diffs1, outbase1, label=attr.upper(), xmin=-0.5,
+                          xmax=16.5)
+            else:
+                diff_plot(k2diffs1, outbase1, label=attr.upper())
         #k_k2diffs2 = diff_sample_model2(med2, objs1, attr)
         #for k, k2diffs2 in k_k2diffs2.iteritems():
         #    if not isinstance(k, str):

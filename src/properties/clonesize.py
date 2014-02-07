@@ -138,8 +138,10 @@ class CloneSizePlots(StatAnalyses):
                     csplot.draw_clonesize_dist(name2obj, attr, plotfile,
                                                     opts.plotformat, opts.dpi)
                 elif g2avr:
-                    csplot.draw_clonesize_dist(g2avr, attr, plotfile,
-                                                        opts.plotformat, opts.dpi)
+                    csplot.draw_clonesize_dist_avr(name2obj, attr, plotfile,
+                                                    opts.plotformat, opts.dpi)
+                    #csplot.draw_clonesize_dist(g2avr, attr, plotfile,
+                    #                                    opts.plotformat, opts.dpi)
 
 class CloneSize(Analysis):
     '''Make plots of different clonesize distributions

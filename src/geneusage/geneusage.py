@@ -121,6 +121,7 @@ def get_geneusage(stat, args):
 
 def geneusage_ttests(attr, type, outfile, g2n, name2obj, matched, pcutoff):
     # attr: "clones"/"reads"; type=genetype: v, d, j, vj, dj
+    testtype = statcommon.get_test_type(g2n, matched)
     f = open(outfile, 'w')
     f.write(("Name\tGroup1_Group2\tt_val\tp_val\tMean1 +/- Std1\t" +
              "Mean2 +/- Std2\n"))
@@ -128,7 +129,8 @@ def geneusage_ttests(attr, type, outfile, g2n, name2obj, matched, pcutoff):
     for gene in genes:
         pair2tp, group2mean = statcommon.ttest_allpairs(g2n, name2obj, matched,
                                                  attr=None, func=get_geneusage,
-                                                 func_args=(attr, type, gene))
+                                                 func_args=(attr, type, gene),
+                                                 testtype=testtype)
         statcommon.ttest_write(f, gene, pair2tp, group2mean, pcutoff)
     f.close()
 

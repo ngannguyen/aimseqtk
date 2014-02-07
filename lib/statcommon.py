@@ -12,6 +12,9 @@ import sys
 from scipy.stats import ttest_ind
 from scipy.stats import ttest_rel
 from scipy.stats import fisher_exact
+from scipy.stats import ranksums
+#from scipy.stats import mannwhitneyu 
+from scipy.stats import wilcoxon
 import numpy as np
 import gzip
 import cPickle as pickle
@@ -153,6 +156,45 @@ class GetClone2Samples(Target):
                                                    outfile, self.sizetype))
 
 #========== FUNCTIONS ==========
+def get_outliers(name2count, maxdev=3):
+    names = sorted(name2count.keys())
+    vec = [name2count[name] for name in names]
+    med = np.median(vec)
+    devs = [abs(v - med) for v in vec]  # deviations
+    med_dev = np.median(devs)
+    low_outliers = {}
+    up_outliers = {}
+    for i, v in enumerate(vec):
+        dev = devs[i] / med_dev if med_dev > 0 else 0
+        if dev > maxdev:
+            name = names[i]
+            if v < med:
+                low_outliers[name] = v
+            else:
+                up_outliers[name] = v
+    lowpoint = med - med_dev * maxdev
+    uppoint = med + med_dev * maxdev
+    return low_outliers, up_outliers, lowpoint, uppoint
+
+def get_test_type2(large, matched):
+    if not large:
+        return 'ttest'
+    elif matched:
+        return 'wilcoxon'
+    else:
+        return 'ranksums'
+
+def get_test_type(g2s, matched):
+    # if at least 1 group has less than 20 samples, use ttest
+    # if each group has at least 20 samples, if matched used
+    # wilcoxon, if unmatched, use ranksums
+    large = True
+    for g, s in g2s.iteritems():
+        if len(s) < 20:
+            large = False
+            break
+    return get_test_type2(large, matched)
+
 def get_clone2samples(samples, sizetype='count'):
     clone2sample2size = {}
     for sample in samples:
@@ -257,7 +299,7 @@ def pair_matrix(rnames, cnames, pair2obj, attr=None, sep="_", func=None, args=No
         rows.append(row)
     return rows
 
-def pair_vec(names1, names2, pair2stat, attr):
+def pair_vec(names1, names2, pair2stat, sep="_", attr=None):
     # return vector of all pairwise comparisition from group names1
     # and group names2
     vec = []
@@ -266,8 +308,8 @@ def pair_vec(names1, names2, pair2stat, attr):
         for n2 in names2:
             if n1 == n2:
                 continue
-            pair = "%s_%s" % (n1, n2)
-            pair_rv = "%s_%s" % (n2, n1)
+            pair = "%s%s%s" % (n1, sep, n2)
+            pair_rv = "%s%s%s" % (n2, sep, n1)
 
             if pair in visited or pair_rv in visited:
                 continue
@@ -278,21 +320,32 @@ def pair_vec(names1, names2, pair2stat, attr):
             elif pair_rv in pair2stat:
                 obj = pair2stat[pair_rv]
             if obj:
-                if attr not in obj.getitems():
-                    raise KeyError("Obj %s does not have attr %s" % (obj.name, attr))
-                vec.append(obj[attr])
+                if attr is None:
+                    vec.append(obj)
+                else:
+                    if attr not in obj.getitems():
+                        raise KeyError("Obj %s does not have attr %s" % (obj.name, attr))
+                    vec.append(obj[attr])
                 visited.append(pair)
     return vec
     
 def ttest_allpairs(group2names, name2obj, matched, attr=None, func=None,
-                   func_args=None): 
-    # perform ttests for all pairs of groups
+                   func_args=None, testtype='ttest'): 
+    # perform ttests for all pairs of groups.
+    # testtype can be: "ttest", "ranksums" or "wilcoxon"
     assert group2names and len(group2names) >= 2
     pair2stats = {}  # key=group1_group2; val=(t, p)
     group2mean = {}  # key=group; val=(mean, std)
-    ttest = ttest_ind
-    if matched:
-        ttest = ttest_rel
+
+    if testtype == "ranksums":
+        test = ranksums
+    elif testtype == 'wilcoxon':
+        test = wilcoxon
+    else:
+        test = test_ind
+        if matched:
+            test = ttest_rel
+        
     groups = group2names.keys()
     for i1 in xrange(0, len(groups) -1):
         g1 = groups[i1]
@@ -307,23 +360,31 @@ def ttest_allpairs(group2names, name2obj, matched, attr=None, func=None,
             pair = "%s_%s" % (g1, g2)
             if vec1 and vec2:
                 if matched and len(vec1) != len(vec2):
-                    tval, pval = ttest_ind(vec1, vec2)
+                    if testtype == 'ttest':
+                        tval, pval = ttest_ind(vec1, vec2)
+                    else:
+                        tval, pval = ranksums(vec1, vec2)
                 else:
-                    tval, pval = ttest(vec1, vec2)
+                    tval, pval = test(vec1, vec2)
             else:
                 tval = 2  # temporary...
                 pval = 2
             pair2stats[pair] = (tval, pval)
     return pair2stats, group2mean
 
-def ttest_pair(vec1, vec2, matched=False):
+def ttest_pair(vec1, vec2, matched=False, testtype='ttest'):
     if not vec1 or not vec2:
         return 2, 2
-    ttest = ttest_ind
-    if matched and len(vec1) == len(vec2):
-        #assert len(vec1) == len(vec2)
-        ttest = ttest_rel
-    tval, pval = ttest(vec1, vec2)
+    if testtype == 'ranksums':
+        test = ranksums
+    elif testtype == 'wilcoxon':
+        test = wilcoxon
+    else:
+        test = ttest_ind
+        if matched and len(vec1) == len(vec2):
+            #assert len(vec1) == len(vec2)
+            test = ttest_rel
+    tval, pval = test(vec1, vec2)
     return tval, pval
 
 def ttest_write(f, name, pair2tp, group2mean, pcutoff=1):

@@ -49,18 +49,23 @@ def sample_lendist_stat(sample, samdir, args=None):
     len2clones = {}
     len2reads = {}
     clones = libsample.sample_all_clones(samdir)
+    totalclone = 0
     for clone in clones:
         if clone.aa:
             l = len(clone.aa)
-            if l not in len2clones:
-                len2clones[l] = 1
+            if clone.vdel is not None:
+                totalclone += 1
+                if l not in len2clones:
+                    len2clones[l] = 1
+                else:
+                    len2clones[l] += 1
+            if l not in len2reads:
                 len2reads[l] = clone.freq
             else:
-                len2clones[l] += 1
                 len2reads[l] += clone.freq
     # convert the number of clones into % total clones
     for l, numclone in len2clones.iteritems():
-        len2clones[l] = float(numclone) / sample.numclone
+        len2clones[l] = float(numclone) / totalclone
 
     stat = LenDistStat()
     stat.set_sample_info(sample)
@@ -77,14 +82,39 @@ def get_lens(stats):
                 lens.append(l)
     return sorted(lens)
 
+def lendist_median(name2obj, attr, outfile):
+    l2freqs = {}
+    lens = get_lens(name2obj.values())
+    for l in lens:
+        l2freqs[l] = []
+    for obj in name2obj.values():
+        attrstr = "len2" + attr
+        l2v = obj[attrstr]
+        for l in lens:
+            if l not in l2v:
+                l2freqs[l].append(0.0)
+            else:
+                l2freqs[l].append(l2v[l])
+    l2medfreq = {}
+    for l, freqs in l2freqs.iteritems():
+        l2medfreq[l] = median(freqs)
+    
+    # print to outfile
+    f = open(outfile, 'w')
+    f.write("#Length\tFrequency\n")
+    for l in sorted(lens):
+        f.write("%d\t%f\n" % (l, l2medfreq[l]))
+    f.close()
+
 def lendist_ttests(attr, outfile, g2n, name2obj, matched, pcutoff):
+    testtype = statcommon.get_test_type(g2n, matched)
     f = open(outfile, 'w')
     # compare median length
     f.write(("#Category\tGroup1_Group2\tt_val\tp_val\tMean1 +/- Std1\t" +
              "Mean2 +/- Std2\n"))
     medattr = "median_" + attr 
     pair2tp, group2mean = statcommon.ttest_allpairs(g2n, name2obj, matched,
-                                                                    medattr)
+                                                    medattr, testtype=testtype)
     statcommon.ttest_write(f, medattr, pair2tp, group2mean)
 
     # compare freq of each length
@@ -95,7 +125,7 @@ def lendist_ttests(attr, outfile, g2n, name2obj, matched, pcutoff):
         pair2tp, group2mean = statcommon.ttest_allpairs(g2n, name2obj,
                                   matched, attr=None,
                                   func=statcommon.obj_dictattr_lookup,
-                                  func_args=(lenattr, l))
+                                  func_args=(lenattr, l), testtype=testtype)
         statcommon.ttest_write(f, str(l), pair2tp, group2mean, pcutoff)
     f.close()
 
@@ -125,6 +155,10 @@ class LenDistAnalyses(StatAnalyses):
                 ttestfile = os.path.join(self.outdir, "ttests_%s.txt" % attr)
                 lendist_ttests(attr, ttestfile, g2n, name2obj,
                                self.opts.matched, self.opts.pval)
+
+            # median len distribution
+            meddist_file  = os.path.join(self.outdir, "median_lendist_%s.txt" % attr)
+            lendist_median(name2obj, attr, meddist_file)
 
 class LenDist(Analysis):
     '''Set up children jobs to compute CDR3 length distribution for

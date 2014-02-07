@@ -367,8 +367,10 @@ class DiversityTtest(Target):
         self.plotdir = plotdir
 
     def run(self):
+        testtype = statcommon.get_test_type(self.g2n, self.matched)
         p2stat, g2mean = statcommon.ttest_allpairs(self.g2n, self.name2stat,
-                                                   self.matched, self.index)
+                                                   self.matched, self.index,
+                                                   testtype=testtype)
         picklefile = os.path.join(self.outdir, "%s.pickle" % self.index)
         pickle.dump((p2stat, g2mean), gzip.open(picklefile, 'wb'))
         if self.plotfmt:

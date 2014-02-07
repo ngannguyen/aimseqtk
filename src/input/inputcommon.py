@@ -255,7 +255,7 @@ def add_input_options(parser):
                      help=('Types of analyses to perform. Default=%default. '
                            + 'Valid options (comma-separated) are: db,prelim,'
                            + 'diversity,similarity,clonesize,lendist,geneusage'
-                           + ',aausage,overlap,trackclone.'))
+                           + ',aausage,overlap,trackclone,model.'))
     group.add_option('--normalize', dest='normalize', action='store_true',
                      default=False, help=('If specified, perform Bioconduct\'s'
                                           + ' metagenomeSeq CSS normalization.'

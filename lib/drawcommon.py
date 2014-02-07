@@ -120,7 +120,7 @@ def init_image(width, height, outformat, outname, dpi):
     fig = plt.figure(figsize=(width, height), dpi=dpi, facecolor='w')
     return (fig, pdf)
 
-def write_image(fig, pdf, outformat, outname, dpi):
+def write_image(fig, pdf, outformat='pdf', outname='myplot', dpi=300):
     if outformat == 'pdf':
         fig.savefig(pdf, format='pdf')
         pdf.close()
@@ -281,7 +281,13 @@ def bihist(y1, y2, axes, bins, orientation, color=None):
     #axes.set_ylim(ymin*1.1, ymax*1.1)
     return ymin, ymax
 
-def draw_heatmap(rownames, colnames, rows, outfile):
+def draw_heatmap(rownames, colnames, rows, outfile, minval=None, maxval=None,
+                 name2color=None, symm=False, rcluster=True, ccluster=True,
+                 cex_row=0.25, cex_col=0.25):
+    # if specified,
+    # cap all values <= minval to minval for the purpose of visibility
+    # similarly for maxval.
+    
     import rpy2.robjects as ro
     from rpy2.robjects.packages import importr
     gplots = importr('gplots')
@@ -289,7 +295,12 @@ def draw_heatmap(rownames, colnames, rows, outfile):
     # convert rows into r matrix
     mvec = []
     for row in rows:
+        if minval:
+            row = [v if v > minval else minval for v in row]
+        if maxval:
+            row = [v if v < maxval else maxval for v in row]
         mvec.extend(row)
+    
     rvec = ro.FloatVector(mvec)
     rrownames = ro.StrVector(rownames)
     rcolnames = ro.StrVector(colnames)
@@ -299,8 +310,21 @@ def draw_heatmap(rownames, colnames, rows, outfile):
     grdevices.pdf(file=outfile)
     try:
         #gplots.heatmap_2(rmatrix)
-        gplots.heatmap_2(rmatrix, Rowv=True, Colv=True, labRow=rrownames,
-                                                        labCol=rcolnames)
+        if name2color:
+            rrowcolors = ro.StrVector([name2color[rn] for rn in rownames])
+            rcolcolors = ro.StrVector([name2color[cn] for cn in colnames])
+            gplots.heatmap_2(rmatrix, Rowv=rcluster, Colv=ccluster,
+                         labRow=rrownames,
+                         labCol=rcolnames, dendrogram="none", trace="none",
+                         key=True, cexRow=cex_row, cexCol=cex_col, symm=symm,
+                         RowSideColors=rrowcolors, ColSideColors=rcolcolors)
+                #col=ro.r.colorRampPalette(c("blue4", "white", "red4"))(100))
+        else:
+            gplots.heatmap_2(rmatrix, Rowv=rcluster, Colv=ccluster,
+                         labRow=rrownames,
+                         labCol=rcolnames, dendrogram="none", trace="none",
+                         key=True, cexRow=cex_row, cexCol=cex_col, symm=symm,
+                   col=ro.r.colorRampPalette(c("blue4", "white", "red4"))(100))
     except:
         print rmatrix
         print rrownames

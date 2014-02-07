@@ -21,7 +21,8 @@ import aimseqtk.lib.drawcommon as drawcommon
 
 
 def draw_group_pairwise_similarity(group1, group2, vec11, vec12, vec22,
-                                   outfile, outfmt='pdf', dpi=300):
+                                   outfile, outfmt='pdf', dpi=300,
+                                   xmax=None, xmin=None, ymax=None, ymin=None):
     # xaxis: G1_G1, G1_G2, G2_G2; yaxis: similarity index
     axes, fig, pdf = drawcommon.get_axes(outfile=outfile, outfmt=outfmt,
                                                                       dpi=dpi)
@@ -37,7 +38,23 @@ def draw_group_pairwise_similarity(group1, group2, vec11, vec12, vec22,
 
     #axes.set_xlabel("Group", size='x-large', weight='bold')
     #axes.set_ylabel(attr, size='x-large', weight='bold')
-    axes.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
+    if not ymax or ymax > 1000:
+        axes.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
+    
+    if xmin and xmax:
+        axes.set_xlim(xmin=xmin, xmax=xmax)
+    else:
+        if xmin:
+            axes.set_xlim(xmin=xmin)
+        elif xmax:
+            axes.set_xlim(xmax=xmax)
+    if ymin and ymax:
+        axes.set_ylim(ymin=ymin, ymax=ymax)
+    else:
+        if ymin:
+            axes.set_ylim(ymin=ymin)
+        elif ymax:
+            axes.set_ylim(ymax=ymax)
     
     drawcommon.write_image(fig, pdf, outfmt, outfile, dpi)
 

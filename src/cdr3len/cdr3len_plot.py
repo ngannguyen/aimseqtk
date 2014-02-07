@@ -100,6 +100,7 @@ def draw_lendist_avr(name2obj, attr, outfile, outfmt='pdf', dpi=300):
         lines.append(line)
         linenames.append(g)
 
+    axes.set_xlim(xmin=4.5)
     axes.set_ylim(bottom=-0.005)
     drawcommon.set_legend(axes, lines, linenames)
     drawcommon.set_grid(axes)

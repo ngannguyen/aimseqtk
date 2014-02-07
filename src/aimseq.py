@@ -106,33 +106,42 @@ class MakeDbSamples(Target):
     def run(self):
         self.logToMaster("MakeDbSamples\n")
         opts = self.options
+
+        make_db = False
+        if 'db' in opts.analyses:
+            make_db = True
+        #make_db = True
         get_model = False
         if 'model' in opts.analyses:
             get_model = True
 
         dbdir = os.path.join(opts.outdir, "sample_db")
-        system("mkdir -p %s" % dbdir)
+        if make_db:
+            system("mkdir -p %s" % dbdir)
         modeldir = os.path.join(opts.outdir, "recomb_model")
         if get_model:
             system("mkdir -p %s" % modeldir)
 
-        status = ['productive', 'non_productive']
+        status = ['productive']
+        #status = ['productive', 'non_productive']
         for s in status:
             indir = os.path.join(self.sampledir, s)
-            outdir = os.path.join(dbdir, s)
-            system("mkdir -p %s" % outdir)
             names = os.listdir(indir)
+            outdir = os.path.join(dbdir, s)
             n2g, n2c, n2m = samples_group_info(names, opts.group2samples)
+            if make_db:
+                system("mkdir -p %s" % outdir)
             
             for sam in names:
                 samdir = os.path.join(indir, sam)
-                sam_dbdir = os.path.join(outdir, sam)
-                system("mkdir -p %s" % sam_dbdir)
                 assert os.path.isdir(samdir)
                 g, c, m = sample_group_info(sam, n2g, n2c, n2m)
-                self.addChildTarget(libsample.MakeDbSample(samdir, sam_dbdir, opts,
+                if make_db:
+                    sam_dbdir = os.path.join(outdir, sam)
+                    system("mkdir -p %s" % sam_dbdir)
+                    self.addChildTarget(libsample.MakeDbSample(samdir, sam_dbdir, opts,
                                                            g, c, m))
-                if 'model' in opts.analyses:
+                if get_model:
                     sam_modeldir = os.path.join(modeldir, s, sam)
                     system("mkdir -p %s" % sam_modeldir)
                     self.addChildTarget(recomb_model.SampleRecombModel(samdir,
@@ -142,10 +151,10 @@ class MakeDbSamples(Target):
             system("mkdir -p %s" % samoutdir)
             self.addChildTarget(libsample.WriteSamples(self.sampledir,
                                                 samoutdir, opts.samout))
-        pdir = os.path.join(dbdir, "productive")
         if (opts.analyses != ['db'] and
             set(opts.analyses) != set(['db', 'model']) and
             opts.analyses != ['model']):
+            pdir = os.path.join(dbdir, "productive")
             self.setFollowOnTarget(Preprocess(pdir, opts))
 
 class Preprocess(Target):
