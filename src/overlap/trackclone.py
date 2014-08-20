@@ -188,8 +188,10 @@ class TrackClonesAgg(StatAnalyses):
             for clone, (rows, indices) in n2o.iteritems():
                 outbase = os.path.join(plotdir, clone)
                 if self.opts.matched:
-                    tcplot.draw_track_clone(clone, rows, self.opts.groups,
+                    tcplot.draw_track_clone_hack(clone, rows, self.opts.groups,
                                         outbase, self.opts)
+                    #tcplot.draw_track_clone(clone, rows, self.opts.groups,
+                    #                    outbase, self.opts)
                 else:
                     tcplot.draw_track_clone_no_matched(clone, rows,
                                          self.opts.groups, outbase, self.opts)
@@ -207,6 +209,12 @@ class TrackClone(Target):
 
     def run(self):
         items = self.clone.split('_')
+        #if len(items) != 3:
+        #    print self.clone
+        #    print len(items)
+        #hack:
+        if len(items) > 3:
+            items = [items[0], items[-2], items[-1]]
         assert len(items) == 3
         #vj = "%s_%s" % (items[0], items[2])
         v = items[0]

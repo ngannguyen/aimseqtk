@@ -267,7 +267,7 @@ def read_list(file):
     f.close()
     return items
 
-def read_dict(file, sep=None):
+def read_dict(file, sep=None, cap=False):
     k2v = {}
     f = open(file, 'r')
     for line in f:
@@ -275,7 +275,10 @@ def read_dict(file, sep=None):
         if len(line) > 0 and line[0] != '#':
             items = line.split() if sep is None else line.split(sep)
             if len(items) == 2:
-                k2v[items[0]] = items[1]
+                if not cap:
+                    k2v[items[0]] = items[1]
+                else:
+                    k2v[items[0]] = items[1].upper()
     f.close()
     return k2v
 
@@ -318,7 +321,7 @@ def aa2codons(aa):
     return codons
 
 def aa2codons_withstart(aa, start):
-    codons = aa2codons[aa]
+    codons = aa2codons(aa)
     codons2 = []
     for c in codons:
         if re.match(start, c):
@@ -326,7 +329,7 @@ def aa2codons_withstart(aa, start):
     return codons2
 
 def aa2codons_withend(aa, end):
-    codons = aa2codons[aa]
+    codons = aa2codons(aa)
     if not end:
         return codons
     codons2 = []

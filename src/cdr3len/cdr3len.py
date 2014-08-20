@@ -132,8 +132,9 @@ def lendist_ttests(attr, outfile, g2n, name2obj, matched, pcutoff):
 class LenDistAnalyses(StatAnalyses):
     '''Draw lendist plots and perform ttests
     '''
-    def __init__(self, indir, outdir, opts):
+    def __init__(self, indir, outdir, opts, avr=False):
         StatAnalyses.__init__(self, indir, outdir, opts)
+        self.avr = avr
 
     def run(self):
         #name2obj = libcommon.load_pickledir_to_dict(self.indir)
@@ -141,11 +142,15 @@ class LenDistAnalyses(StatAnalyses):
         name2obj = self.name2obj
         attrs = ['clones', 'reads'] 
         plotfmt = self.opts.plotformat
+        if not self.avr and len(name2obj) >= 20:
+            self.avr = True
         for attr in attrs:
             plotfile = os.path.join(self.outdir, "%s" % attr)
-            if len(name2obj) >= 20:
+            #if len(name2obj) >= 20:
+            if self.avr:
                 ldplot.draw_lendist_avr(name2obj, attr, plotfile, plotfmt,
-                                    self.opts.dpi)
+                                        self.opts.dpi, bar=True)
+                                        #self.opts.dpi)
             else:
                 ldplot.draw_lendist(name2obj, attr, plotfile, plotfmt,
                                     self.opts.dpi)
@@ -179,5 +184,6 @@ class LenDist(Analysis):
             outfile = os.path.join(ld_dir, "%s.pickle" % sam)
             self.addChildTarget(libsample.SampleAnalysis(sample, samdir,
                                                  outfile, sample_lendist_stat))
-        self.setFollowOnTarget(LenDistAnalyses(ld_dir, self.outdir, opts))
+        self.setFollowOnTarget(LenDistAnalyses(ld_dir, self.outdir, opts,
+                                               avr=True))
 

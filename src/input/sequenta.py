@@ -46,6 +46,20 @@ def get_j_groups(jgenes):
             jgroups.append(group)
     return jgroups
 
+def get_ddels(ddel):
+    # randomly select a combination of (d5del, d3del) out of all
+    # possible combinations given ddel
+    if ddel <= 0:
+        return 0, 0
+    else:
+        try:
+            d5del = random.randint(0, ddel) 
+            d3del = ddel - d5del
+            return d5del, d3del
+        except:
+            print ddel
+            sys.exit()
+
 def sequenta_parseline(line, index2col):
     items = line.strip("\n").split('\t')
     if len(items) != len(index2col):
@@ -173,11 +187,13 @@ def sequenta_parseline(line, index2col):
         dlen = col2val['D_Segment_length']
         if not dlen.startswith('-') and dlen not in ['', 'NAN']:
             ddel = dfulllen - int(dlen)
-            clone.d5del = ddel / 2.0
-            clone.d3del = ddel - clone.d5del
+            clone.d5del, clone.d3del = get_ddels(ddel)
+            #clone.d5del = ddel / 2.0
+            #clone.d3del = ddel - clone.d5del
         else:  # all D was deleted
-            clone.d5del = dfulllen / 2
-            clone.d3del = dfulllen - clone.d5del
+            clone.d5del, clone.d3del = get_ddels(dfulllen)
+            #clone.d5del = dfulllen / 2
+            #clone.d3del = dfulllen - clone.d5del
             ndn = clone.firstjpos - clone.lastvpos
             clone.firstdpos = clone.lastvpos + ndn/2 + 1
             clone.lastdpos = clone.firstdpos - 1

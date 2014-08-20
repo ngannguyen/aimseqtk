@@ -13,22 +13,28 @@ from optparse import OptionGroup
 import matplotlib
 matplotlib.use('Agg')
 
+def get_colors_sequential():
+    colors = ["#c6dbef", "#9ecae1", "#6baed6", "#3182bd", "#08519c", #blue
+              "#c7e9c0", "#a1d99b", "#74c476", "#31a354", "#006d2c", #green
+              "#d9d9d9", "#bdbdbd", "#969696", "#636363", "#252525"] #gray
+    return colors
+
 def get_colors_medium():
-    # blue, red, green, purple, orange, green-ish, yellow, brown, pink 
-    colors = ["#377EB8", "#E31A1C", "#4DAF4A", "#984EA3", "#FF7F00", "#1B9E77",
-              "#FFFF33", "#A65628", "#CE1256"]
+    # red, blue, green, purple, orange, green-ish, yellow, brown, pink, gray 
+    colors = ["#E31A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#1B9E77",
+              "#FFFF33", "#A65628", "#CE1256", "#595959"]
     return colors
 
 def get_colors_light():
-    # blue, red, green, purple, orange, green-ish, yellow, brown, pink 
-    colors = ["#A6D7FE", "#FE8E8F", "#B8FEB5", "#F6BDFE", "#FEBF80", "#95FEDF",
-              "#FFFFB3", "#D8885A", "#D7B5D8"]
+    # red, blue, green, purple, orange, green-ish, yellow, brown, pink 
+    colors = ["#FE8E8F", "#A6D7FE", "#B8FEB5", "#F6BDFE", "#FEBF80", "#95FEDF",
+              "#FFFFB3", "#D8885A", "#D7B5D8", "#acacac"]
     return colors
 
 def get_colors_dark():
-    # blue, red, green, purple, orange, green-ish, yellow, brown, pink 
-    colors = ["#275880", "#B30000", "#367A33", "#6A3772", "#B25900", "#136E53",
-              "#B2B324", "#743C1C", "#900D3D"]
+    # red, blue, green, purple, orange, green-ish, yellow, brown, pink 
+    colors = ["#B30000", "#275880", "#367A33", "#6A3772", "#B25900", "#136E53",
+              "#B2B324", "#743C1C", "#900D3D", "#2c2c2c"]
     return colors
 
 def get_markers():
@@ -41,8 +47,11 @@ def get_n_colors(n):
    rgb_tuples = map(lambda x: colorsys.hsv_to_rgb(*x), hsv_tuples)
    return rgb_tuples
 
-def get_name2color(names):
-    colors = get_colors_medium()
+def get_name2color(names, matched=False):
+    if matched:
+        colors = get_colors_sequential()
+    else:
+        colors = get_colors_medium()
     if len(names) > len(colors):
         colors = get_n_colors(len(names))
     name2color = {}
@@ -50,11 +59,15 @@ def get_name2color(names):
         name2color[name] = colors[i]
     return name2color
 
-def get_name2color_wtgroup(names, name2group, group2names):
+# sample1 (light green -> dark green), sample2 (light blue -> dark blue)
+# each sample has 1 marker
+# or IL7 (sample1 -> sample3)
+def get_name2color_wtgroup(names, name2group, group2names, groups=None, matched=False):
     name2color = {}
     if group2names:
-        groups = group2names.keys()
-        group2color = get_name2color(groups)
+        if groups is None:
+            groups = sorted(group2names.keys())
+        group2color = get_name2color(groups, matched)
         for name, group in name2group.iteritems():
             if group in group2color:
                 name2color[name] = group2color[group]

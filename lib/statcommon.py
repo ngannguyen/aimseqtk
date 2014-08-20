@@ -139,6 +139,18 @@ class GetClone2SamplesVJ(Target):
 
 class GetClone2Samples(Target):
     '''get clone2sample2size
+    Input directory:
+        indir/
+            sample1/
+                sample1 (pickle of sample general info)
+                V1 (pickle of V1 clones)
+                V2
+                ...
+    Output directory:
+        outdir/
+            V1 (pickle of clone2sam2size)
+            V2
+            ...
     '''
     def __init__(self, indir, outdir, sizetype, sams=None):
         Target.__init__(self)
@@ -299,7 +311,7 @@ def pair_matrix(rnames, cnames, pair2obj, attr=None, sep="_", func=None, args=No
         rows.append(row)
     return rows
 
-def pair_vec(names1, names2, pair2stat, sep="_", attr=None):
+def pair_vec(names1, names2, pair2stat, attr=None, sep="_"):
     # return vector of all pairwise comparisition from group names1
     # and group names2
     vec = []
@@ -342,7 +354,7 @@ def ttest_allpairs(group2names, name2obj, matched, attr=None, func=None,
     elif testtype == 'wilcoxon':
         test = wilcoxon
     else:
-        test = test_ind
+        test = ttest_ind
         if matched:
             test = ttest_rel
         

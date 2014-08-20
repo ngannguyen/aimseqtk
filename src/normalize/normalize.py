@@ -12,6 +12,7 @@ import sys
 
 import rpy2.robjects as robjs
 import rpy2.robjects.numpy2ri as rpyn
+from rpy2.rinterface import NARealType
 import gzip
 import cPickle as pickle
 
@@ -134,22 +135,31 @@ class CloneMatrix(Target):
                                                                  self.outfile))
 
 class UpdateNormCount(Target):
-    def __init__(self, infile, outfile, norm_col):
+    def __init__(self, infile, outfile, norm_col, names):
         Target.__init__(self)
         self.infile = infile
         self.outfile = outfile
         self.norm_col = norm_col
+        self.names = names
 
     def run(self):
+        name2nc = {}
+        for i, name in enumerate(self.names):
+            name2nc[name] = self.norm_col[i]
+        
         clones = pickle.load(gzip.open(self.infile, "rb"))
-        cloneids = self.norm_col.names
+        cloneids = self.names
         for clone in clones:
             normcount = 0.0
             id = clone.get_vseqj()
             assert id in cloneids
-            nc = self.norm_col.rx(id)
-            normcount = rpyn.ri2numpy(nc)[0]
-            clone.normcount = normcount
+            #nc = self.norm_col.rx(id)
+            nc = name2nc[id]
+            if isinstance(nc, NARealType):
+                nc = 0.0
+            #clone.normcount = nc
+            #HACK!!
+            clone.count = nc
         pickle.dump(clones, gzip.open(self.outfile, "wb"))
 
 class NormalizeMRexp2(Target):
@@ -160,22 +170,50 @@ class NormalizeMRexp2(Target):
         self.outdir = outdir
 
     def run(self):
+        self.logToMaster("NormalizeMRexp2")
         (rows, rownames, colnames) = pickle.load(gzip.open(self.mx_file, "rb"))
-        norm_matrix = normalize_MRexp(rows, rownames, colnames)
+        #norm_matrix = normalize_MRexp(rows, rownames, colnames)
+        norm_matrix = normalize_MRexp(rows, colnames, rownames)
         
         # get samples with normalized counts: 
         for sam in os.listdir(self.samdir):
+            #norm_col = norm_matrix.rx[sam, True]
             norm_col = norm_matrix.rx[True, sam]
+            #DEBUG
+            #print sam
+            #print len(norm_col)
+            #print len(rownames)
+            #rowindex = 0
+            #for i, rn in enumerate(rownames):
+            #    if rn == 'TCRBV12-03_CASSLGGVGAFF_TCRBJ01-01':
+            #        rowindex = i
+            #        print rowindex, rn
+            #        break
+            #print norm_col[rowindex]
+            #col = []
+            #index = -1
+            #for i, colname in enumerate(colnames):
+            #    if colname == sam:
+            #        index = i
+            #        print index, colname
+            #        break
+            ##print rows
+            #print rows[rowindex*len(colnames) + index]
+            #if sam == 'MH':            
+            #    sys.exit(1)
+            #END DEBUG
             samdir = os.path.join(self.samdir, sam)
             samout = os.path.join(self.outdir, sam)
             system("mkdir -p %s" % samout)
             for vj in os.listdir(samdir):
                 vjin = os.path.join(samdir, vj)
-                vjout = os.patj.join(samout, vj)
+                vjout = os.path.join(samout, vj)
                 if vj == sam:  # sample file: out/sam/sam
                     system("cp %s %s" % (vjin, vjout))
                 else:
-                    self.addChildTarget(UpdateNormCount(vjin, vjout, norm_col))
+                    assert len(rownames) == len(norm_col)
+                    self.addChildTarget(UpdateNormCount(vjin, vjout, norm_col,
+                                                        rownames))
         self.setFollowOnTarget(libcommon.CleanupFile(self.mx_file))
 
 class NormalizeMRexp(Target):

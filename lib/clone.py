@@ -20,8 +20,8 @@ class Cdr3Clone():
         self.jdel = jdel
         self.d5del = d5del
         self.d3del = d3del
-        self.vdins = ''
-        self.djins = ''
+        self.vdins = vdins
+        self.djins = djins
         self.id = id
         self.sample = sample
         self.freq = freq

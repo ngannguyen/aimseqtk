@@ -12,6 +12,8 @@ import sys
 import gzip
 import cPickle as pickle
 from optparse import OptionGroup
+import numpy as np
+import mdp
 
 from jobTree.scriptTree.target import Target
 from sonLib.bioio import system
@@ -160,6 +162,49 @@ def geneusage_table(attr, type, outfile, g2n, n2obj, genes):
         f.write("%s_Avr\t%s\n" % (g, "\t".join(avr)))
     f.close()
 
+def geneusage_matrix(attr, type, g2n, n2obj, genes):
+    fullattr = "type2gene2%s" % attr
+    matrix = []  # rows = samples, columns = genes
+    rownames = []  # (name, group)
+    for g in sorted(g2n.keys()):
+        names = sorted(g2n[g])
+        for name in names:
+            gene2freq = n2obj[name][fullattr][type]
+            freqs = []
+            for i, gene in enumerate(genes):
+                if gene in gene2freq:
+                    freqs.append(gene2freq[gene])
+                else:
+                    freqs.append(0.0)
+            row = freqs
+            matrix.append(row)
+            rownames.append((name, g))
+    return matrix, rownames
+
+def geneusage_pca(matrix, rownames, n2obj, outfile):
+    m = np.array(matrix)
+    #transformed_m = mdp.pca(m, output_dim=4)
+    #pcan = mdp.nodes.PCANode(output_dim=4, svd=True, reduce=True)
+    pcan = mdp.nodes.PCANode(output_dim=3)
+    transformed_m = pcan.execute(m)
+
+    # write to text:
+    txtfile = "%s.txt" % outfile
+    f = open(txtfile, 'w')
+    f.write("#Var1: %.3f%%; var2: %.3f%%\n" % (pcan.d[0], pcan.d[1]))
+    f.write("#%s\n" % "\t".join([str(d) for d in pcan.d]))
+    f.write("#%f\n" % pcan.explained_variance)
+    
+    for i, r in enumerate(transformed_m):
+        f.write("%s\t%s\t%s\n" %(rownames[i][0], rownames[i][1],
+                                 "\t".join([str(c) for c in r])))
+    f.close()
+
+    # draw
+    #guplot.draw_pca(rownames, transformed_m, outfile, n2obj,
+    #                pcan.d[0], pcan.d[1])
+    guplot.draw_pca(rownames, transformed_m, outfile, n2obj)
+
 class GeneUsageTable(Target):
     '''Write the sample gene usage. Columns=Genes, Rows=Samples
     '''
@@ -175,6 +220,49 @@ class GeneUsageTable(Target):
     def run(self):
         geneusage_table(self.attr, self.type, self.outfile, self.g2n,
                         self.name2obj, self.genes)
+
+class GeneUsagePca(Target):
+    '''PCA analyses
+    '''
+    def __init__(self, attr, type, outfile, g2n, name2obj, genes):
+        Target.__init__(self)
+        self.attr = attr
+        self.type = type
+        self.outfile = outfile
+        self.g2n = g2n
+        self.name2obj = name2obj
+        self.genes = genes
+
+    def run(self):
+        matrix, rownames = geneusage_matrix(self.attr, self.type, self.g2n,
+                                            self.name2obj, self.genes)
+        geneusage_pca(matrix, rownames, self.name2obj, self.outfile)
+
+#class GeneUsageCorrelation(Target):
+#    '''Compute within-group usage correlations and between-group usage
+#    correlations, and see if within-group has higher correlations
+#    '''
+#    def __init__(self, attr, type, outfile, g2n, name2obj, pcutoff):
+#        Target.__init__(self)
+#        self.attr = attr
+#        self.type = type
+#        self.outfile = outfile
+#        self.g2n = g2n
+#        self.name2obj = name2obj
+#        self.pcutoff = pcutoff
+#
+#    def run(self):
+#        tempdir = "%s-corr-tempdir" % os.path.splitext(self.outfile)[0]
+#        system("mkdir -p %s" % tempdir)
+#        # within groups:
+#        for group, names in g2n.iteritems():
+#            outfile = os.path.join(tempdir, "%s_%s" % (group, group))
+#            
+#        # between groups:
+#
+#
+#        geneusage_correlations(self.attr, self.type, self.outfile, self.g2n,
+#                               self.name2obj, self.pcutoff)
 
 class GeneUsageTtests(Target):
     '''Perform ttests for a specific gene category (v, d, j, vj or dj)
@@ -226,15 +314,21 @@ class GeneUsageAnalyses(StatAnalyses):
                     plotfile = os.path.join(plotdir, type)
                     self.addChildTarget(guplot.GeneUsagePlot(self.name2obj,
                                         attr, type, type2genes[type], plotfile,
-                                        self.opts))
+                                        self.opts, avr=True))
             # ttests
             if g2n:
                 ttestdir = os.path.join(self.outdir, "%s_ttests" % attr)
                 system("mkdir -p %s" % ttestdir)
+                pcadir = os.path.join(self.outdir, "%s_PCA" % attr)
+                system("mkdir -p %s" % pcadir)
                 for type in types:
                     ttestfile = os.path.join(ttestdir, "%s.txt" % type)
                     self.addChildTarget(GeneUsageTtests(attr, type, ttestfile,
                        g2n, self.name2obj, self.opts.matched, self.opts.pval))
+                    
+                    pcafile = os.path.join(pcadir, type)
+                    self.addChildTarget(GeneUsagePca(attr, type, pcafile,
+                                         g2n, self.name2obj, type2genes[type]))
 
 class GeneUsage(Analysis):
     '''Set up children jobs to compute gene usage for each sample

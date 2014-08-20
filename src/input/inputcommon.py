@@ -205,13 +205,15 @@ def check_input_options(parser, options):
         #                                " Please modify the metadata file."))
     options.analyses = analyses
     if options.samout:
-        if options.samout not in ['txt', 'pickle', 'both']:
-            raise libcommon.InputError("Unknown sample out format %s." %
-                                        options.samout)
-        if options.samout == 'both':
-            options.samout = ['txt', 'pickle']
+        samouts = options.samout.split(',')
+        for samout in samouts:
+            if samout not in ['fasta', 'txt', 'pickle', 'all']:
+                raise libcommon.InputError("Unknown sample out format %s." %
+                                            samout)
+        if 'all' in samouts:
+            options.samout = ['fasta', 'txt', 'pickle']
         else:
-            options.samout = [options.samout]
+            options.samout = samouts
         if 'prelim' in analyses and 'pickle' not in options.samout:
             options.samout.append('pickle')
         samoutdir = os.path.join(options.outdir, "samples")
@@ -220,8 +222,6 @@ def check_input_options(parser, options):
             system("mkdir -p %s" % dir1)
             dir2 = os.path.join(samoutdir, "non_productive", format)
             system("mkdir -p %s" % dir2)
-    if options.sampling:
-        options.sampling = long(options.sampling)
     drawcommon.check_plot_options(parser, options)
 
 def add_input_options(parser):
@@ -235,12 +235,15 @@ def add_input_options(parser):
                       help=('Input format. Please choose one of the following:'
                             + ' [mitcr,adaptive,sequenta,aimseqtk,pickle,db]. '
                             + 'Default=%default'))
+    group.add_option('--regroup', dest='regroup', default=None,
+                      help=('If input format is "db" and need to regroup' +
+                            ' the samples. This is the new dbdir.'))
     group.add_option('--ext', dest='ext', 
                      help='Input file extension. (Optional)')
     group.add_option('-o', '--outdir', dest='outdir', default='.',
                       help='Output directory. Default=%default')
     group.add_option('--sample_out_format', dest='samout', help=('Optional: ' +
-                     '[txt,pickle,both]. If specified, will print out ' +
+                     '[fasta,txt,pickle,both]. If specified, will print out ' +
                      'processed (after size and status filtering) samples in' +
                      'the chosen format to outdir/samples. Default: do not ' +
                      'print out samples.'))
@@ -262,6 +265,11 @@ def add_input_options(parser):
                                           ))
     group.add_option('--sampling', dest='sampling', type='long',
                      help='Sampling size. Default is using all reads.')
+    group.add_option('--sampling_uniq', dest='sampling_uniq', type='long',
+                     help='Sampling uniq clones. Default is using all clones.')
+    group.add_option('--sampling_top', dest='sampling_top', type='long',
+                     help=('Sampling, then only return the top clones. ' +
+                           'Default is using all clones.'))
     group.add_option('--pval', dest='pval', type='float', default=0.05,
                      help='pvalue cutoff')
     parser.add_option_group(group)

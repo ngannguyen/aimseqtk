@@ -59,8 +59,10 @@ def repsize_table(name2sample, outfile, group2avr={}, group2names={}, tex=False)
                                                      True, group2avr)
     else:
         avrnames = []
-        sortedsamples = sorted(name2sample.values(), key=lambda s: s.size,
-                                                     reverse=True)
+        sortedsamples = libcommon.sort_dict_by_value(name2sample,
+                                                     keyfunc=lambda item: item[0].size)
+        #sortedsamples = sorted(name2sample.values(), key=lambda s: s.size,
+        #                                             reverse=True)
     # Write to output file
     if tex:
         repsize_latex(sortedsamples, outfile, avrnames)

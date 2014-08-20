@@ -22,6 +22,7 @@ import os
 import sys
 import numpy as np
 import gzip
+#import marshal as pickle
 import cPickle as pickle
 from optparse import OptionGroup
 
@@ -144,7 +145,7 @@ def islarge(vecs):
             break
     return large
 
-def table_group_pairwise_similarity(g1, g2, vec11, vec12, vec22, outfile):
+def table_group_pairwise_similarity(g1, g2, vec11, vec12, vec22, outfile, testtype=None):
     mean_11, std_11 = statcommon.vec_mean_std(vec11)
     mean_12, std_12 = statcommon.vec_mean_std(vec12)
     mean_22, std_22 = statcommon.vec_mean_std(vec22)
@@ -152,19 +153,22 @@ def table_group_pairwise_similarity(g1, g2, vec11, vec12, vec22, outfile):
     f = open(outfile, 'w')
     f.write("Categories\tpval\ttval\tmean1 +/- std1\tmean2 +/- std2\n")
     # Compare 11 and 12
-    testtype = statcommon.get_test_type2(islarge([vec11, vec12]), False)
+    if testtype is None:
+        testtype = statcommon.get_test_type2(islarge([vec11, vec12]), False)
     f.write("%s, %s_%s\t" % (g1, g1, g2))
     t_11_12, p_11_12 = statcommon.ttest_pair(vec11, vec12, testtype=testtype) 
     f.write("%.3f\t%.2e\t%.3f +/- %.3f\t%.3f +/- %.3f\n" % (t_11_12, p_11_12,
                                             mean_11, std_11, mean_12, std_12))
     # Compare 12 and 22
-    testtype = statcommon.get_test_type2(islarge([vec12, vec22]), False)
+    if testtype is None:
+        testtype = statcommon.get_test_type2(islarge([vec12, vec22]), False)
     f.write("%s_%s, %s\t" % (g1, g2, g2))
     t_12_22, p_12_22 = statcommon.ttest_pair(vec12, vec22, testtype=testtype) 
     f.write("%.3f\t%.2e\t%.3f +/- %.3f\t%.3f +/- %.3f\n" % (t_12_22, p_12_22,
                                             mean_12, std_12, mean_22, std_22))
     # Compare 11 and 22
-    testtype = statcommon.get_test_type2(islarge([vec11, vec22]), False)
+    if testtype is None:
+        testtype = statcommon.get_test_type2(islarge([vec11, vec22]), False)
     f.write("%s, %s\t" % (g1, g2))
     t_11_22, p_11_22 = statcommon.ttest_pair(vec11, vec22, testtype=testtype) 
     f.write("%.3f\t%.2e\t%.3f +/- %.3f\t%.3f +/- %.3f\n" % (t_11_22, p_11_22,

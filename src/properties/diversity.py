@@ -151,7 +151,7 @@ def sample_rf_sizes(sample_size, bin=None, rf_sizes=None):
         sizes = [sample_size]
     return sizes
 
-def diversity_ttest_text(index2obj, outfile):
+def diversity_ttest_text(index2obj, outfile, pcutoff):
     # obj: (pair2(tval, pval), group2(mean, std))
     f = open(outfile, 'w')
     f.write("#Index\tSample_Pair\tt_value\tp_value\tMean1\tStd1\tMean2\tStd2\n")
@@ -162,6 +162,8 @@ def diversity_ttest_text(index2obj, outfile):
         group2mean = obj[1]
         for pair in sorted(pair2stat.keys()):
             tval, pval = pair2stat[pair]
+            if pval > pcutoff:  # does not pass pcutoff
+                continue
             groups = pair.split('_')
             assert len(groups) == 2
             (mean1, std1) = group2mean[groups[0]]
@@ -199,7 +201,8 @@ def add_rarefaction_options(parser):
     group.add_option('--rf_sizes', dest='rf_sizes', 
                      help=('Optional. Comma separated string of sampling ' +
                         'sizes. If specified, will ignore options "bin".'))
-    group.add_option('--diversity', dest='diversity', default='numclone',
+    group.add_option('--diversity', dest='diversity',
+                     default='numclone,shannon,fisher_alpha',
                      help=('Comma separated list of diversity indices. ' +
                            'Default=%default. Valid options are: [numclone' +
                            ',simpson,invsimpson,shannon,fisher_alpha].'))
@@ -375,8 +378,12 @@ class DiversityTtest(Target):
         pickle.dump((p2stat, g2mean), gzip.open(picklefile, 'wb'))
         if self.plotfmt:
             plotfile = os.path.join(self.plotdir, self.index)
-            dvplot.draw_diversity_plot(self.g2n, self.name2stat, self.index,
-                                       plotfile, self.plotfmt)
+            if not self.matched:
+                dvplot.draw_diversity_plot(self.g2n, self.name2stat,
+                                           self.index, plotfile, self.plotfmt)
+            else:
+                dvplot.draw_diversity_plot_hacktimeseries(self.g2n,
+                           self.name2stat, self.index, plotfile, self.plotfmt)
 
 class DiversityTtestSummary(StatAnalyses):
     '''Print table summary of the ttest statistics
@@ -384,24 +391,26 @@ class DiversityTtestSummary(StatAnalyses):
        Outtable: cols: Index, PairSamples, tval, pval, mean1 +- std1,
        mean2 +- std2;  rows: each index, each sample pair
     '''
-    def __init__(self, indir, outdir):
+    def __init__(self, indir, outdir, pval=1.0):
         StatAnalyses.__init__(self, indir, outdir)
+        self.pval = pval
 
     def run(self):
         self.load_indir()
         index2obj = self.name2obj
         txtfile = os.path.join(self.outdir, "diversity_ttests.txt")
-        diversity_ttest_text(index2obj, txtfile)
+        diversity_ttest_text(index2obj, txtfile, self.pval)
 
 class DiversitySummary(StatAnalyses):
     #  table of diversity indices
     def __init__(self, sampledir, outdir, indices, group2samples, matched,
-                                                                 plotfmt=None):
+                                                plotfmt=None, pval=1.0):
         StatAnalyses.__init__(self, sampledir, outdir)
         self.indices = indices
         self.group2samples = group2samples
         self.matched = matched
         self.plotfmt = plotfmt
+        self.pval = pval
 
     def run(self):
         self.load_indir()
@@ -426,7 +435,8 @@ class DiversitySummary(StatAnalyses):
             for index in self.indices:
                 self.addChildTarget(DiversityTtest(global_dir, index, g2s,
                             name2sampling, self.matched, self.plotfmt, outdir))
-            self.setFollowOnTarget(DiversityTtestSummary(global_dir, outdir))
+            self.setFollowOnTarget(DiversityTtestSummary(global_dir, outdir,
+                                                         self.pval))
 
 class Diversity(Analysis):
     '''Calculate diversity indices for input samples. No sampling.
@@ -436,12 +446,13 @@ class Diversity(Analysis):
        xaxis: groups, yaxis: diversity indices
     '''
     def __init__(self, indir, outdir, indices, group2samples, matched,
-                                                                 plotfmt=None):
+                 plotfmt=None, pval=1.0):
         Analysis.__init__(self, indir, outdir)
         self.indices = indices
         self.group2samples = group2samples
         self.matched = matched
         self.plotfmt = plotfmt
+        self.pval = pval
 
     def run(self):
         size = None  # no sampling
@@ -459,5 +470,6 @@ class Diversity(Analysis):
                                      outfile, sample_sampling_diversity,
                                      size, self.indices, None))
         self.setFollowOnTarget(DiversitySummary(d_dir, self.outdir,
-                self.indices, self.group2samples, self.matched, self.plotfmt))
+                               self.indices, self.group2samples, self.matched,
+                               self.plotfmt, self.pval))
 

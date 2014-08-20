@@ -19,83 +19,9 @@ from jobTree.scriptTree.target import Target
 from sonLib.bioio import system
 
 import aimseqtk.lib.sample as libsample
+#import aimseqtk.src.recomb.recomb_common as rcommon
+from aimseqtk.src.recomb.recomb_common import RecombModel
 
-
-class RecombModel:
-    '''Represents recombination/ generative model of a repertoire
-    '''
-    def __init__(self):
-        self.v = {}  # key=specific v, val=frequencies/count
-        self.j = {}
-        self.d = {}
-        self.dj = {}
-        self.v2del = {}  # delV_length | V
-        self.j2del = {}  # delJ_length | J
-        self.d2del = {}  # delD5_delD3 | D
-        self.ins_vd = {}  # insertion length btw V and D
-        self.vd2next = {}  # {5'_VD_nucleotide: {VD_nucleotide: freq}}
-        self.ins_dj = {}  # insertion length btw D and J
-        self.dj2prev = {}
-    
-    def get_attrs_depth1(self):
-        return ['v', 'd', 'j', 'dj', 'ins_vd', 'ins_dj']
-
-    def get_attrs_depth2(self):
-        return ['v2del', 'j2del', 'd2del', 'vd2next', 'dj2prev']
-    
-    def getitems(self):
-        return self.__dict__.keys()
-
-    def __getitem__(self, name):
-        if name not in self.__dict__:
-            return None
-        return self.__dict__[name]
-    
-    def __setitem__(self, name, val):
-        self.__dict__[name] = val
-
-    def update_vd2next(self, nts, size):
-        if not nts or len(nts) < 2:
-            return
-        for i in xrange(1, len(nts)):
-            prev_nt = nts[i - 1]
-            nt = nts[i]
-            if prev_nt not in self.vd2next:
-                self.vd2next[prev_nt] = {nt: size}
-            elif nt not in self.vd2next[prev_nt]:
-                self.vd2next[prev_nt][nt] = size
-            else:
-                self.vd2next[prev_nt][nt] += size
-
-    def update_dj2prev(self, nts, size):
-        if not nts or len(nts) < 2:
-            return
-        for i in xrange(len(nts) - 1, 0, -1):
-            nt = nts[i]
-            prev_nt = nts[i - 1]
-            if nt not in self.dj2prev:
-                self.dj2prev[nt] = {prev_nt: size}
-            elif prev_nt not in self.dj2prev[nt]:
-                self.dj2prev[nt][prev_nt] = size
-            else:
-                self.dj2prev[nt][prev_nt] += size
-
-    def update_attr(self, attr, key, size):
-        assert attr in ['v', 'd', 'j', 'dj', 'ins_vd', 'ins_dj']
-        if key not in self[attr]:
-            self[attr][key] = size
-        else:
-            self[attr][key] += size
-
-    def update_attr2(self, attr, key1, key2, size):
-        assert attr in ['v2del', 'j2del', 'd2del']
-        #if isinstance(key2, int):
-        if key1 not in self[attr]:
-            self[attr][key1] = {key2: size}
-        elif key2 not in self[attr][key1]:
-            self[attr][key1][key2] = size
-        else:
-            self[attr][key1][key2] += size
 
 ####################### Functions ############################
 def dict_convert_to_freq(mydict):
@@ -136,7 +62,36 @@ def model_update(model1, model2):
     for attr in ['v2del', 'j2del', 'd2del', 'vd2next', 'dj2prev']:
         update_dict_depth2(model1[attr], model2[attr])
 
-def get_recomb_stats(clones):
+def get_recomb_stats0(clones):
+    # in case of unambiguous calls, just record the first call
+    model = RecombModel()
+    for clone in clones:
+        # V
+        model.update_attr('v', clone.vgenes[0], 1)
+        model.update_attr2('v2del', clone.vgenes[0], clone.vdel, 1)
+        # J
+        model.update_attr('j', clone.jgenes[0], 1)
+        model.update_attr2('j2del', clone.jgenes[0], clone.jdel, 1)
+        # D
+        model.update_attr('d', clone.dgenes[0], 1)
+        model.update_attr2('d2del', clone.dgenes[0],
+                           (clone.d5del, clone.d3del), 1)
+        # DJ
+        model.update_attr('dj', (clone.dgenes[0], clone.jgenes[0]), 1)
+        # Insertion length
+        ins_vd = clone.firstdpos - clone.lastvpos - 1
+        model.update_attr('ins_vd', ins_vd, 1)
+        ins_dj = clone.firstjpos - clone.lastdpos - 1
+        model.update_attr('ins_dj', ins_dj, 1)
+        # inserted nt given 5' nt
+        vd_nts = clone.nuc[clone.lastvpos: clone.firstdpos]  # include the lastV
+        model.update_vd2next(vd_nts, 1)
+        dj_nts = clone.nuc[clone.lastdpos + 1: clone.firstjpos + 1]  # include lastJ
+        model.update_dj2prev(dj_nts, 1)
+    return model
+
+def get_recomb_stats_splitweight0(clones):
+    # in case of unambiguous calls, split the weight
     model = RecombModel()
     for clone in clones:
         # V
@@ -169,7 +124,57 @@ def get_recomb_stats(clones):
         vd_nts = clone.nuc[clone.lastvpos: clone.firstdpos]  # include the lastV
         model.update_vd2next(vd_nts, vsize)
         dj_nts = clone.nuc[clone.lastdpos + 1: clone.firstjpos + 1]  # include lastJ
-        model.update_dj2prev(dj_nts, vsize)
+        model.update_dj2prev(dj_nts, jsize)
+    return model
+
+def get_recomb_stats(clones):
+    # in case of unambiguous calls, just record the first call
+    model = RecombModel()
+    for clone in clones:
+        # V
+        model.update_attr('v', clone.v, 1)
+        model.update_attr2('v2del', clone.v, clone.vdel, 1)
+        # J
+        model.update_attr('j', clone.j, 1)
+        model.update_attr2('j2del', clone.j, clone.jdel, 1)
+        # D
+        model.update_attr('d', clone.d, 1)
+        model.update_attr2('d2del', clone.d, (clone.d5del, clone.d3del), 1)
+        # DJ
+        model.update_attr('dj', (clone.d, clone.j), 1)
+        # Insertion length
+        ins_vd = len(clone.vdins) - 1
+        model.update_attr('ins_vd', ins_vd, 1)
+        ins_dj = len(clone.djins) - 1
+        model.update_attr('ins_dj', ins_dj, 1)
+        # inserted nt given 5' nt
+        model.update_vd2next(clone.vdins, 1)  # include the lastV
+        model.update_dj2prev(clone.djins, 1)  # include the fistJ
+    return model
+
+def get_recomb_stats_splitweight(clones):
+    # in case of unambiguous calls, split the weight
+    model = RecombModel()
+    for clone in clones:
+        # V
+        model.update_attr('v', clone.v, 1.0)
+        model.update_attr2('v2del', clone.v, clone.vdel, 1.0)
+        # J
+        model.update_attr('j', clone.j, 1.0)
+        model.update_attr2('j2del', clone.j, clone.jdel, 1.0)
+        # D
+        model.update_attr('d', clone.d, 1.0)
+        model.update_attr2('d2del', clone.d, (clone.d5del, clone.d3del), 1.0)
+        # DJ
+        model.update_attr('dj', (clone.d, clone.j), 1.0)
+        # Insertion length
+        ins_vd = len(clone.vdins) - 1
+        model.update_attr('ins_vd', ins_vd, 1.0)
+        ins_dj = len(clone.djins) - 1
+        model.update_attr('ins_dj', ins_dj, 1.0)
+        # inserted nt given 5' nt
+        model.update_vd2next(clone.vdins, 1.0)
+        model.update_dj2prev(clone.djins, 1.0)
     return model
 
 def write_attr(mydict, outfile):
@@ -258,6 +263,8 @@ class SampleRecombModel(Target):
         system("mkdir -p %s" % tempdir)
 
         for file in os.listdir(self.indir):  # each batch
+            if file == os.path.basename(self.indir):
+                continue
             infile = os.path.join(self.indir, file)
             outfile = os.path.join(tempdir, file)
             self.addChildTarget(ClonesRecombModel(infile, outfile))

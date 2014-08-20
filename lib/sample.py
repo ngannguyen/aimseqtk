@@ -121,6 +121,18 @@ def write_clones(file, clones, append=False):
         f.write("%s\n" % clone.getstr())
     f.close()
 
+def write_clones_to_fasta(clones, f, sample, currindex):
+    for i, clone in enumerate(clones):
+        id = currindex + i
+        seq = clone.nuc
+        if clone.aa:
+            seq = clone.aa
+
+        header = "%s;%d|%s|%s|%s;size=%d" % (sample, id, clone.v, clone.j,
+                                             clone.d, clone.count)
+        f.write(">%s\n" % header)
+        f.write("%s\n" % seq)
+
 #def write_samples(outdir, samples):
 #    for sample in samples:
 #        outfile = os.path.join(outdir, "%s.tsv" % sample.name)
@@ -278,6 +290,33 @@ class WriteSample(Target):
             clones = pickle.load(gzip.open(batchfile, "rb"))
             write_clones(self.outfile, clones, True)
 
+class WriteSampleFasta(Target):
+    '''may need to fix this, right now indir is sample dir with this
+    structure:
+        indir/
+            sample
+            v1
+            v2
+            ...
+    '''
+    def __init__(self, indir, outfile):
+        Target.__init__(self)
+        self.indir = indir
+        self.outfile = outfile
+
+    def run(self):
+        sample = os.path.basename(self.indir)
+        f = open(self.outfile, 'w')
+        numclone = 0
+        for file in os.listdir(self.indir):
+            if file == sample:
+                continue
+            filepath = os.path.join(self.indir, file)
+            clones = pickle.load(gzip.open(filepath, 'rb'))
+            write_clones_to_fasta(clones, f, sample, numclone)
+            numclone += len(clones)
+        f.close()
+
 class WriteSamples(Target):
     def __init__(self, indir, outdir, samout):
         Target.__init__(self)
@@ -297,6 +336,13 @@ class WriteSamples(Target):
                 samdir = os.path.join(self.indir, sam)
                 outfile = os.path.join(txtdir, sam)
                 self.addChildTarget(WriteSample(samdir, outfile))
+        if 'fasta' in self.samout:
+            fadir = os.path.join(self.outdir, 'fasta')
+            system('mkdir -p %s' % fadir)
+            for sam in os.listdir(self.indir):
+                samdir = os.path.join(self.indir, sam)
+                outfile = os.path.join(fadir, sam)
+                self.addChildTarget(WriteSampleFasta(samdir, outfile))
 
 class FilterSample(Target):
     '''Filter a sample by clone size and by productive status
@@ -505,11 +551,36 @@ of starting sequences to avoid the bias
 class SamplingError(Exception):
     pass
 
+def get_top_clones(vj2index2count, size):
+    top_vj2i2c = {}
+    countvji = []
+    for vj, i2c in vj2index2count.iteritems():
+        for i, c in i2c.iteritems():
+            countvji.append((c, (vj,i)))
+    countvji = sorted(countvji, reverse=True, key=lambda item:item[0])
+    assert size <= len(countvji) 
+    for item in countvji[:size]:
+        c = item[0]
+        vj = item[1][0]
+        i = item[1][1]
+        if vj not in top_vj2i2c:
+            top_vj2i2c[vj] = {i: c}
+        else:
+            top_vj2i2c[vj][i] = c
+    return top_vj2i2c
+
 def sampling(sample, sampledir, outdir, args=None):
     if not args:
         return sampledir
         #raise ValueError("Sample sampling: sample is None or has 0 clone.\n")
     size = args[0]
+    uniq = False
+    if len(args) > 1 and args[1] == 'uniq':  # sampling unique clones
+        uniq = True
+    top = False
+    if len(args) >= 3 and args[1] == 'top':  # sampling, then get largest clones
+        top = True
+        numtop = int(args[2])
 
     if sample is None or sample.size == 0: 
         raise ValueError("Sample sampling: sample is None or has 0 clone.\n")
@@ -526,7 +597,10 @@ def sampling(sample, sampledir, outdir, args=None):
         vjfile = os.path.join(sampledir, vj)
         clones = pickle.load(gzip.open(vjfile, 'rb'))
         for i, clone in enumerate(clones):
-            indices.extend([(vj, i)] * clone.count)
+            if uniq:
+                indices.append((vj, i))
+            else:
+                indices.extend([(vj, i)] * clone.count)
     chosen_indices = random.sample(indices, size)
 
     vj2index2count = {}
@@ -537,7 +611,10 @@ def sampling(sample, sampledir, outdir, args=None):
             vj2index2count[vj][i] = 1
         else:
             vj2index2count[vj][i] += 1
-    
+    # only return top clones if "top" is specified 
+    if top and numtop:
+        vj2index2count = get_top_clones(vj2index2count, numtop)
+
     vj2newclones = {}
     numclone = 0
     for vj, i2count in vj2index2count.iteritems():
